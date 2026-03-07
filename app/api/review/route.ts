@@ -29,10 +29,11 @@ export async function POST(req: NextRequest) {
   }
 
   const fileName = body.fileName ?? "item.xml";
+  const model = body.model && typeof body.model === "string" ? body.model : undefined;
 
   try {
     const summary = parseQTIXml(body.xml, fileName);
-    const reviewer = new QTIReviewer(apiKey);
+    const reviewer = new QTIReviewer(apiKey, model);
     const result = await reviewer.reviewItem(summary, body.xml, fileName);
     return NextResponse.json(result);
   } catch (err) {

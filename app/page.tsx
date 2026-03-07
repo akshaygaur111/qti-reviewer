@@ -5,8 +5,11 @@ import FileDropZone from "@/components/FileDropZone";
 import ReviewCard from "@/components/ReviewCard";
 import BulkSummaryBar from "@/components/BulkSummaryBar";
 import ScoreRing from "@/components/ScoreRing";
+import ModelPicker from "@/components/ModelPicker";
 import type { ReviewResult, BulkReviewResponse } from "@/lib/types";
 // BulkReviewResponse used for download payload type
+
+const DEFAULT_MODEL = "gemini-2.5-flash";
 
 type Tab = "single" | "bulk";
 
@@ -17,6 +20,7 @@ type Tab = "single" | "bulk";
 function SingleTab() {
   const [xml, setXml] = useState("");
   const [fileName, setFileName] = useState("item.xml");
+  const [model, setModel] = useState(DEFAULT_MODEL);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +43,7 @@ function SingleTab() {
       const res = await fetch("/api/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ xml, fileName }),
+        body: JSON.stringify({ xml, fileName, model }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Review failed");
@@ -83,7 +87,8 @@ function SingleTab() {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <ModelPicker value={model} onChange={setModel} disabled={loading} />
         <button
           onClick={handleReview}
           disabled={!xml.trim() || loading}
@@ -166,6 +171,7 @@ function buildBulkSummary(results: ReviewResult[]) {
 
 function BulkTab() {
   const [items, setItems] = useState<{ name: string; content: string }[]>([]);
+  const [model, setModel] = useState(DEFAULT_MODEL);
   const [running, setRunning] = useState(false);
   const [abortRef] = useState({ abort: false });
   const [progress, setProgress] = useState<BulkProgress | null>(null);
@@ -200,7 +206,7 @@ function BulkTab() {
         const res = await fetch("/api/review", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ xml: item.content, fileName: item.name }),
+          body: JSON.stringify({ xml: item.content, fileName: item.name, model }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Review failed");
@@ -309,7 +315,8 @@ function BulkTab() {
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <ModelPicker value={model} onChange={setModel} disabled={running} />
         {!running ? (
           <button
             onClick={handleStart}

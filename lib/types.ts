@@ -97,6 +97,7 @@ export interface ReviewResult {
 export interface ReviewRequest {
   xml: string;
   fileName?: string;
+  model?: string;
 }
 
 export interface BulkReviewRequest {
