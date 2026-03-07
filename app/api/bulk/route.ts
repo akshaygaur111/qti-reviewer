@@ -3,9 +3,9 @@ import { parseQTIXml } from "@/lib/parser";
 import { QTIReviewer } from "@/lib/reviewer";
 import type { BulkReviewRequest, BulkReviewResponse, ReviewResult } from "@/lib/types";
 
-export const maxDuration = 60; // seconds
-
-const MAX_ITEMS = 20; // guard against very large batches timing out
+export const maxDuration = 60; // seconds per Vercel function call
+// Note: for large batches the UI calls /api/review per item client-side.
+// This endpoint is kept for programmatic / API consumers with small batches.
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -30,17 +30,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (body.items.length > MAX_ITEMS) {
-    return NextResponse.json(
-      { error: `Maximum ${MAX_ITEMS} items per bulk request. Please split into smaller batches.` },
-      { status: 400 }
-    );
-  }
-
   const reviewer = new QTIReviewer(apiKey);
   const results: ReviewResult[] = [];
 
-  // Process sequentially to respect rate limits and stay within timeout
   for (const item of body.items) {
     if (!item.xml || typeof item.xml !== "string") {
       results.push({
