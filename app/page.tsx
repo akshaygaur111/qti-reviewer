@@ -5,12 +5,20 @@ import FileDropZone from "@/components/FileDropZone";
 import ReviewCard from "@/components/ReviewCard";
 import BulkSummaryBar from "@/components/BulkSummaryBar";
 import ModelPicker from "@/components/ModelPicker";
+import SheetsInput from "@/components/SheetsInput";
+import HistoryTab from "@/components/HistoryTab";
 import type { ReviewResult, BulkReviewResponse } from "@/lib/types";
-// BulkReviewResponse used for download payload type
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
 
-type Tab = "single" | "bulk";
+type Tab = "single" | "bulk" | "history";
+
+// Queue item — either file-based (xml content) or URL-based (from sheet)
+interface QueueItem {
+  name: string;
+  xml?: string;
+  xmlUrl?: string;
+}
 
 // ---------------------------------------------------------------------------
 // Single item tab
@@ -67,10 +75,8 @@ function SingleTab() {
 
   return (
     <div className="space-y-6">
-      {/* Drop zone */}
       <FileDropZone onFiles={handleFiles} disabled={loading} />
 
-      {/* XML textarea */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Or paste QTI XML directly
@@ -85,7 +91,6 @@ function SingleTab() {
         />
       </div>
 
-      {/* Actions */}
       <div className="flex flex-wrap items-center gap-3">
         <ModelPicker value={model} onChange={setModel} disabled={loading} />
         <button
@@ -101,9 +106,7 @@ function SingleTab() {
               </svg>
               Reviewing…
             </>
-          ) : (
-            "Review Item"
-          )}
+          ) : "Review Item"}
         </button>
 
         {xml.trim() && !loading && (
@@ -129,9 +132,7 @@ function SingleTab() {
       </div>
 
       {error && (
-        <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">
-          {error}
-        </div>
+        <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">{error}</div>
       )}
 
       {result && <ReviewCard result={result} />}
@@ -140,11 +141,11 @@ function SingleTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Bulk tab — client-side sequential processing (unlimited items)
+// Bulk tab — client-side sequential processing, DB persistence, Sheet import
 // ---------------------------------------------------------------------------
 
 interface BulkProgress {
-  current: number;    // items completed
+  current: number;
   total: number;
   currentFileName: string;
 }
@@ -157,30 +158,35 @@ function buildBulkSummary(results: ReviewResult[]) {
     failed: results.filter((r) => !!r.error).length,
     averageScore:
       succeeded.length > 0
-        ? Math.round(
-            (succeeded.reduce((s, r) => s + r.overallScore, 0) / succeeded.length) * 100
-          ) / 100
+        ? Math.round((succeeded.reduce((s, r) => s + r.overallScore, 0) / succeeded.length) * 100) / 100
         : 0,
     criticalIssueCount: succeeded.reduce(
-      (count, r) => count + r.issues.filter((i) => i.severity === "critical").length,
-      0
+      (count, r) => count + r.issues.filter((i) => i.severity === "critical").length, 0
     ),
   };
 }
 
 function BulkTab() {
-  const [items, setItems] = useState<{ name: string; content: string }[]>([]);
+  const [items, setItems] = useState<QueueItem[]>([]);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [running, setRunning] = useState(false);
   const [abortRef] = useState({ abort: false });
   const [progress, setProgress] = useState<BulkProgress | null>(null);
   const [results, setResults] = useState<ReviewResult[]>([]);
   const [expandAll, setExpandAll] = useState(false);
+  const [savedBatchId, setSavedBatchId] = useState<string | null>(null);
 
   function handleFiles(files: { name: string; content: string }[]) {
     setItems((prev) => {
       const existing = new Set(prev.map((f) => f.name));
-      return [...prev, ...files.filter((f) => !existing.has(f.name))];
+      return [...prev, ...files.filter((f) => !existing.has(f.name)).map((f) => ({ name: f.name, xml: f.content }))];
+    });
+  }
+
+  function handleSheetItems(sheetItems: { name: string; xmlUrl: string }[]) {
+    setItems((prev) => {
+      const existing = new Set(prev.map((f) => f.name));
+      return [...prev, ...sheetItems.filter((s) => !existing.has(s.name))];
     });
   }
 
@@ -193,7 +199,23 @@ function BulkTab() {
     abortRef.abort = false;
     setRunning(true);
     setResults([]);
+    setSavedBatchId(null);
     setProgress({ current: 0, total: items.length, currentFileName: items[0].name });
+
+    // Create a batch in DB (no-op if DB not configured)
+    let batchId: string | null = null;
+    try {
+      const batchRes = await fetch("/api/history/batches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `Batch ${new Date().toLocaleString()} (${items.length} items)` }),
+      });
+      const batchData = await batchRes.json();
+      batchId = batchData.batchId ?? null;
+      if (batchId) setSavedBatchId(batchId);
+    } catch { /* DB unavailable, continue without persistence */ }
+
+    const collectedResults: ReviewResult[] = [];
 
     for (let i = 0; i < items.length; i++) {
       if (abortRef.abort) break;
@@ -202,10 +224,15 @@ function BulkTab() {
 
       let result: ReviewResult;
       try {
+        const body: Record<string, string> = { fileName: item.name, model };
+        if (item.xml) body.xml = item.xml;
+        if (item.xmlUrl) body.xmlUrl = item.xmlUrl;
+        if (batchId) body.batchId = batchId;
+
         const res = await fetch("/api/review", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ xml: item.content, fileName: item.name, model }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? "Review failed");
@@ -223,8 +250,19 @@ function BulkTab() {
         };
       }
 
-      // Append result live so user sees cards appear one by one
-      setResults((prev) => [...prev, result]);
+      collectedResults.push(result);
+      setResults([...collectedResults]);
+    }
+
+    // Update batch summary
+    if (batchId && collectedResults.length > 0) {
+      try {
+        await fetch("/api/history/batches", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ batchId, summary: buildBulkSummary(collectedResults) }),
+        });
+      } catch { /* best-effort */ }
     }
 
     setProgress((p) => p ? { ...p, current: p.total } : null);
@@ -253,17 +291,19 @@ function BulkTab() {
 
   return (
     <div className="space-y-6">
+      {/* Input sources */}
       <FileDropZone multiple onFiles={handleFiles} disabled={running} />
+      <SheetsInput onAdd={handleSheetItems} disabled={running} />
 
-      {/* File list */}
+      {/* Queue */}
       {items.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm font-medium text-gray-700">
-              {items.length} file{items.length !== 1 ? "s" : ""} queued
+              {items.length} item{items.length !== 1 ? "s" : ""} queued
             </p>
             <button
-              onClick={() => { setItems([]); setResults([]); setProgress(null); }}
+              onClick={() => { setItems([]); setResults([]); setProgress(null); setSavedBatchId(null); }}
               className="text-xs text-gray-500 hover:text-red-600 transition-colors"
               disabled={running}
             >
@@ -272,15 +312,17 @@ function BulkTab() {
           </div>
           <ul className="space-y-1 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-white">
             {items.map((f) => {
-              const done = results.some((r) => r.fileName === f.name);
-              const failed = results.find((r) => r.fileName === f.name)?.error;
+              const resultForItem = results.find((r) => r.fileName === f.name);
+              const isDone = !!resultForItem;
+              const isFailed = !!resultForItem?.error;
               return (
                 <li key={f.name} className="flex items-center gap-2 text-sm text-gray-700 px-2 py-1 rounded hover:bg-gray-50">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${
-                    failed ? "bg-red-400" : done ? "bg-green-400" :
+                    isFailed ? "bg-red-400" : isDone ? "bg-green-400" :
                     running && progress?.currentFileName === f.name ? "bg-blue-400 animate-pulse" : "bg-gray-200"
                   }`} />
                   <span className="truncate flex-1">{f.name}</span>
+                  {f.xmlUrl && <span className="text-xs text-gray-400">URL</span>}
                   {!running && (
                     <button onClick={() => removeItem(f.name)} className="text-gray-300 hover:text-red-500 transition-colors">✕</button>
                   )}
@@ -298,15 +340,12 @@ function BulkTab() {
             <span>
               {running
                 ? `Reviewing: ${progress.currentFileName}`
-                : `Done — ${progress.current} of ${progress.total} completed`}
+                : `Done — ${progress.current} of ${progress.total} completed${savedBatchId ? " · saved to history" : ""}`}
             </span>
             <span className="font-medium">{pct}%</span>
           </div>
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-            <div
-              className="h-2 bg-blue-500 rounded-full transition-all duration-300"
-              style={{ width: `${pct}%` }}
-            />
+            <div className="h-2 bg-blue-500 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
           </div>
         </div>
       )}
@@ -383,47 +422,43 @@ function BulkTab() {
 export default function HomePage() {
   const [tab, setTab] = useState<Tab>("single");
 
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "single", label: "Single Item" },
+    { id: "bulk", label: "Bulk Review" },
+    { id: "history", label: "History" },
+  ];
+
   return (
     <div className="space-y-8">
-      {/* Hero */}
       <div className="text-center space-y-2">
         <h1 className="text-3xl font-bold text-gray-900">QTI 3.0 Item Reviewer</h1>
         <p className="text-gray-500 max-w-xl mx-auto">
-          Upload or paste your QTI 3.0 XML assessment items for an AI-powered review covering
-          content accuracy, scoring logic, response processing, answer completeness,
-          QTI compliance, and accessibility.
+          AI-powered review of QTI 3.0 assessment items — scoring logic, compliance, content accuracy, and more.
         </p>
       </div>
 
-      {/* Tab switcher */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="flex border-b border-gray-200">
-          <button
-            onClick={() => setTab("single")}
-            className={`flex-1 px-6 py-4 font-medium text-sm transition-colors ${
-              tab === "single"
-                ? "text-blue-600 border-b-2 border-blue-500 bg-blue-50"
-                : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-            }`}
-          >
-            Single Item Review
-          </button>
-          <button
-            onClick={() => setTab("bulk")}
-            className={`flex-1 px-6 py-4 font-medium text-sm transition-colors ${
-              tab === "bulk"
-                ? "text-blue-600 border-b-2 border-blue-500 bg-blue-50"
-                : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-            }`}
-          >
-            Bulk Review
-          </button>
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex-1 px-6 py-4 font-medium text-sm transition-colors ${
+                tab === t.id
+                  ? "text-blue-600 border-b-2 border-blue-500 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
         <div className="p-6">
-          {tab === "single" ? <SingleTab /> : <BulkTab />}
+          {tab === "single" && <SingleTab />}
+          {tab === "bulk" && <BulkTab />}
+          {tab === "history" && <HistoryTab />}
         </div>
       </div>
-
     </div>
   );
 }

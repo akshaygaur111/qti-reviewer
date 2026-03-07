@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseQTIXml } from "@/lib/parser";
 import { QTIReviewer } from "@/lib/reviewer";
+import { saveResult } from "@/lib/db";
 import type { ReviewRequest } from "@/lib/types";
 
-export const maxDuration = 60; // seconds (Vercel Pro: 300)
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -21,20 +22,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  if (!body.xml || typeof body.xml !== "string" || body.xml.trim().length === 0) {
+  // Resolve XML content — from inline string or remote URL
+  let xml = body.xml ?? "";
+  if (!xml && body.xmlUrl) {
+    try {
+      const res = await fetch(body.xmlUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      xml = await res.text();
+    } catch (err) {
+      return NextResponse.json(
+        { error: `Failed to fetch XML from URL: ${err instanceof Error ? err.message : err}` },
+        { status: 400 }
+      );
+    }
+  }
+
+  if (!xml.trim()) {
     return NextResponse.json(
-      { error: "Request body must contain a non-empty 'xml' string." },
+      { error: "Request body must contain a non-empty 'xml' string or a valid 'xmlUrl'." },
       { status: 400 }
     );
   }
 
-  const fileName = body.fileName ?? "item.xml";
+  const fileName = body.fileName ?? (body.xmlUrl ? body.xmlUrl.split("/").pop() ?? "item.xml" : "item.xml");
   const model = body.model && typeof body.model === "string" ? body.model : undefined;
 
   try {
-    const summary = parseQTIXml(body.xml, fileName);
+    const summary = parseQTIXml(xml, fileName);
     const reviewer = new QTIReviewer(apiKey, model);
-    const result = await reviewer.reviewItem(summary, body.xml, fileName);
+    const result = await reviewer.reviewItem(summary, xml, fileName);
+
+    // Persist to DB (no-op if DATABASE_URL not set)
+    if (body.batchId) {
+      await saveResult(body.batchId, result);
+    }
+
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

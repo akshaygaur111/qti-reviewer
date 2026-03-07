@@ -87,9 +87,26 @@ export interface ReviewResult {
 // ---------------------------------------------------------------------------
 
 export interface ReviewRequest {
-  xml: string;
+  xml?: string;       // raw XML content
+  xmlUrl?: string;    // URL to fetch XML from (server-side)
   fileName?: string;
   model?: string;
+  batchId?: string;   // if set, result is saved to DB under this batch
+}
+
+// ---------------------------------------------------------------------------
+// History types
+// ---------------------------------------------------------------------------
+
+export interface Batch {
+  id: string;
+  name: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  avg_score: number;
+  critical: number;
+  created_at: string;
 }
 
 export interface BulkReviewRequest {
