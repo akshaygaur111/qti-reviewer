@@ -4,7 +4,6 @@ import { useState } from "react";
 import FileDropZone from "@/components/FileDropZone";
 import ReviewCard from "@/components/ReviewCard";
 import BulkSummaryBar from "@/components/BulkSummaryBar";
-import ScoreRing from "@/components/ScoreRing";
 import ModelPicker from "@/components/ModelPicker";
 import type { ReviewResult, BulkReviewResponse } from "@/lib/types";
 // BulkReviewResponse used for download payload type
@@ -218,9 +217,7 @@ function BulkTab() {
           fileName: item.name,
           overallScore: 0,
           overallSummary: "",
-          categoryScores: [],
           issues: [],
-          strengths: [],
           modelUsed: "",
           error: err instanceof Error ? err.message : String(err),
         };
@@ -398,25 +395,6 @@ export default function HomePage() {
         </p>
       </div>
 
-      {/* Review criteria pills */}
-      <div className="flex flex-wrap justify-center gap-2">
-        {[
-          "Content Accuracy",
-          "Scoring Logic",
-          "Response Processing",
-          "Answer Completeness",
-          "QTI 3.0 Compliance",
-          "Accessibility",
-        ].map((c) => (
-          <span
-            key={c}
-            className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium border border-blue-200"
-          >
-            {c}
-          </span>
-        ))}
-      </div>
-
       {/* Tab switcher */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="flex border-b border-gray-200">
@@ -446,24 +424,6 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Score legend */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Score Legend</p>
-        <div className="grid grid-cols-5 gap-3">
-          {[
-            { range: "9–10", label: "Excellent", score: 10 },
-            { range: "7–8", label: "Good", score: 8 },
-            { range: "5–6", label: "Fair", score: 6 },
-            { range: "3–4", label: "Poor", score: 4 },
-            { range: "1–2", label: "Critical", score: 2 },
-          ].map((s) => (
-            <div key={s.label} className="flex flex-col items-center gap-1">
-              <ScoreRing score={s.score} size="sm" />
-              <span className="text-xs text-gray-500">{s.range}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }

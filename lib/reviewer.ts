@@ -8,14 +8,14 @@ import {
   HarmCategory,
   HarmBlockThreshold,
 } from "@google/generative-ai";
-import type { QTIItemSummary, ReviewResult, Issue, CategoryScore } from "./types";
+import type { QTIItemSummary, ReviewResult, Issue } from "./types";
 
 // ---------------------------------------------------------------------------
 // Prompt
 // ---------------------------------------------------------------------------
 
 const SYSTEM_PROMPT = `You are an expert QTI (Question and Test Interoperability) 3.0 assessment reviewer.
-Analyse QTI 3.0 assessment items and provide a structured, personalised review across six categories:
+Analyse QTI 3.0 assessment items and report issues across six categories:
 
 1. content_accuracy — Question clarity, unambiguous wording, factual correctness, cultural bias.
 2. scoring_logic — outcomeDeclarations, max/min/default score values, SCORE alignment with responseProcessing, partial credit correctness.
@@ -24,14 +24,15 @@ Analyse QTI 3.0 assessment items and provide a structured, personalised review a
 5. qti_compliance — QTI 3.0 required attributes (identifier, title, adaptive, timeDependent), responseIdentifier cross-references, structural validity.
 6. accessibility — Alt text for images that are actually present, xml:lang, reading level, inclusive language.
 
+## Always raise these as critical issues
+- Missing SCORE outcomeDeclaration: if no outcomeDeclaration with identifier="SCORE" exists, raise a critical scoring_logic issue — the item has no declared score outcome and scoring will not function.
+
 ## Personalisation rules — CRITICAL
-Every issue and strength MUST reference specific details from THIS item:
+Every issue MUST reference specific details from THIS item:
 - Quote the actual question text or choice content when relevant
-- Name actual identifiers (e.g. "choice A", "identifier RESPONSE_1", "SCORE maxValue 10")
-- Reference actual score values found in the XML
-- Do NOT write generic statements like "ensure images have alt text" unless you can see an image element in the XML
-- Do NOT write generic statements like "add correct feedback" unless the item design explicitly calls for it — the absence of correct-answer feedback (modalFeedback for correct outcomes) is a deliberate design choice, NOT an issue
-- Do NOT flag missing correct feedback as an issue under any category
+- Name actual identifiers (e.g. "RESPONSE_1", "SCORE maxValue 10")
+- Reference actual score values and element names found in the XML
+- Do NOT write generic statements unless they apply to something actually present in the XML
 
 ## Do NOT raise issues for these — they are valid design choices
 - Absence of modalFeedback for correct answers (correct-answer feedback is optional)
@@ -48,9 +49,6 @@ Respond ONLY with valid JSON (no markdown, no extra text):
 {
   "overall_score": <1-10>,
   "overall_summary": "<2-3 sentence summary specific to THIS item's content>",
-  "category_scores": [
-    { "category": "<name>", "score": <1-10>, "summary": "<1-2 sentences referencing THIS item>" }
-  ],
   "issues": [
     {
       "category": "<name>",
@@ -59,8 +57,7 @@ Respond ONLY with valid JSON (no markdown, no extra text):
       "detail": "<explanation citing specific XML content, identifiers, or values>",
       "recommendation": "<concrete fix for this specific item>"
     }
-  ],
-  "strengths": ["<strength citing specific content from THIS item>"]
+  ]
 }
 
 Severity: critical=broken/wrong scores, major=significant quality issue, minor=small problem, suggestion=enhancement.
@@ -137,15 +134,6 @@ export class QTIReviewer {
 
       result.overallScore = Number(data.overall_score ?? 0);
       result.overallSummary = String(data.overall_summary ?? "");
-      result.strengths = Array.isArray(data.strengths) ? data.strengths : [];
-
-      result.categoryScores = (data.category_scores ?? []).map(
-        (cs: Record<string, unknown>): CategoryScore => ({
-          category: String(cs.category ?? ""),
-          score: Number(cs.score ?? 0),
-          summary: String(cs.summary ?? ""),
-        })
-      );
 
       result.issues = (data.issues ?? []).map(
         (i: Record<string, unknown>): Issue => ({

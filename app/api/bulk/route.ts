@@ -41,9 +41,7 @@ export async function POST(req: NextRequest) {
         fileName: item.fileName ?? "unknown.xml",
         overallScore: 0,
         overallSummary: "",
-        categoryScores: [],
         issues: [],
-        strengths: [],
         modelUsed: "",
         error: "Missing or invalid xml field.",
       });
@@ -61,9 +59,7 @@ export async function POST(req: NextRequest) {
         fileName: item.fileName,
         overallScore: 0,
         overallSummary: "",
-        categoryScores: [],
         issues: [],
-        strengths: [],
         modelUsed: "",
         error: err instanceof Error ? err.message : String(err),
       });

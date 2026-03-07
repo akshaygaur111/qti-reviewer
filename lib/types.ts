@@ -71,21 +71,13 @@ export interface Issue {
   recommendation: string;
 }
 
-export interface CategoryScore {
-  category: string;
-  score: number;
-  summary: string;
-}
-
 export interface ReviewResult {
   itemIdentifier: string;
   itemTitle: string;
   fileName: string;
   overallScore: number;
   overallSummary: string;
-  categoryScores: CategoryScore[];
   issues: Issue[];
-  strengths: string[];
   modelUsed: string;
   error?: string;
 }
