@@ -1,0 +1,11 @@
+{
+  "framework": "nextjs",
+  "functions": {
+    "app/api/review/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/bulk/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
