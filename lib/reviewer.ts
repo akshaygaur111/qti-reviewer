@@ -95,9 +95,7 @@ export class QTIReviewer {
       fileName,
       overallScore: 0,
       overallSummary: "",
-      categoryScores: [],
       issues: [],
-      strengths: [],
       modelUsed: this.modelName,
     };
 
