@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sample QTI 3.0 Multiple Choice Item
+  Topic: Basic Biology — Photosynthesis
+  This item intentionally has one deliberate issue (distractor D is implausible)
+  to demonstrate the reviewer's detection capability.
+-->
+<assessmentItem
+  xmlns="http://www.imsglobal.org/xsd/imsqtiasi_v3p0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.imsglobal.org/xsd/imsqtiasi_v3p0
+    https://purl.imsglobal.org/spec/qti/v3p0/schema/xsd/imsqti_asiv3p0_v1p0.xsd"
+  identifier="item-bio-photosynthesis-001"
+  title="Photosynthesis: Primary Products"
+  adaptive="false"
+  timeDependent="false"
+  xml:lang="en-US">
+
+  <!-- RESPONSE DECLARATION -->
+  <responseDeclaration identifier="RESPONSE" cardinality="single" baseType="identifier">
+    <correctResponse>
+      <value>choice_c</value>
+    </correctResponse>
+  </responseDeclaration>
+
+  <!-- OUTCOME DECLARATIONS -->
+  <outcomeDeclaration identifier="SCORE" cardinality="single" baseType="float"
+    normalMaximum="1" normalMinimum="0">
+    <defaultValue>
+      <value>0</value>
+    </defaultValue>
+  </outcomeDeclaration>
+
+  <outcomeDeclaration identifier="FEEDBACK" cardinality="single" baseType="identifier"/>
+
+  <!-- ITEM BODY -->
+  <itemBody>
+    <p>
+      Which of the following correctly identifies the primary products of the
+      light-dependent reactions of photosynthesis?
+    </p>
+
+    <choiceInteraction responseIdentifier="RESPONSE" shuffle="true" maxChoices="1">
+      <prompt>Select the best answer.</prompt>
+      <simpleChoice identifier="choice_a">Glucose and oxygen</simpleChoice>
+      <simpleChoice identifier="choice_b">Carbon dioxide and water</simpleChoice>
+      <simpleChoice identifier="choice_c">ATP, NADPH, and oxygen</simpleChoice>
+      <simpleChoice identifier="choice_d">Starch and cellulose</simpleChoice>
+    </choiceInteraction>
+  </itemBody>
+
+  <!-- RESPONSE PROCESSING -->
+  <responseProcessing
+    template="https://purl.imsglobal.org/spec/qti/v3p0/rptemplates/match_correct"/>
+
+  <!-- MODAL FEEDBACK -->
+  <modalFeedback outcomeIdentifier="FEEDBACK" identifier="feedbackCorrect" showHide="show">
+    <p>Correct! The light-dependent reactions produce ATP and NADPH (which power the
+    Calvin cycle) and release oxygen as a by-product of water splitting.</p>
+  </modalFeedback>
+  <modalFeedback outcomeIdentifier="FEEDBACK" identifier="feedbackIncorrect" showHide="show">
+    <p>Incorrect. Glucose is produced in the light-independent (Calvin cycle) reactions,
+    not the light-dependent reactions. Review the two stages of photosynthesis.</p>
+  </modalFeedback>
+
+</assessmentItem>

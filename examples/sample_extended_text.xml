@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sample QTI 3.0 Extended Text (Essay) Item
+  Topic: Environmental Science — Climate Change
+  Demonstrates: extendedTextInteraction, rubricBlock, outcome-only scoring
+  Note: Extended text items are manually graded; SCORE defaults to 0 until human review.
+-->
+<assessmentItem
+  xmlns="http://www.imsglobal.org/xsd/imsqtiasi_v3p0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.imsglobal.org/xsd/imsqtiasi_v3p0
+    https://purl.imsglobal.org/spec/qti/v3p0/schema/xsd/imsqti_asiv3p0_v1p0.xsd"
+  identifier="item-env-climate-essay-003"
+  title="Climate Change: Causes and Mitigation"
+  adaptive="false"
+  timeDependent="false"
+  xml:lang="en-US">
+
+  <!-- RESPONSE DECLARATION — no correctResponse for open-ended items -->
+  <responseDeclaration identifier="RESPONSE" cardinality="single" baseType="string"/>
+
+  <!-- OUTCOME DECLARATIONS -->
+  <outcomeDeclaration identifier="SCORE" cardinality="single" baseType="float"
+    normalMaximum="10" normalMinimum="0">
+    <defaultValue>
+      <value>0</value>
+    </defaultValue>
+  </outcomeDeclaration>
+
+  <!-- RUBRIC BLOCK for human graders -->
+  <rubricBlock view="scorer" use="navigation">
+    <p><strong>Scoring Rubric (10 points total)</strong></p>
+    <ul>
+      <li><strong>Causes (4 pts):</strong> Identifies at least three human-driven causes
+          (fossil fuel combustion, deforestation, industrial agriculture, cement production).
+          2 pts for two causes, 1 pt for one cause.</li>
+      <li><strong>Evidence (2 pts):</strong> Provides at least one specific data point or
+          scientific reference (e.g., IPCC report, CO₂ ppm levels, temperature anomaly data).</li>
+      <li><strong>Mitigation Strategies (3 pts):</strong> Proposes at least two realistic
+          mitigation strategies with explanation of mechanism
+          (e.g., renewable energy, carbon capture, policy measures, behavioural change).</li>
+      <li><strong>Writing Quality (1 pt):</strong> Clear, well-structured response with
+          correct grammar and scientific terminology.</li>
+    </ul>
+  </rubricBlock>
+
+  <!-- ITEM BODY -->
+  <itemBody>
+    <p>
+      Human activities have significantly altered Earth's climate system over the past
+      two centuries.
+    </p>
+    <p>
+      In your response, address the following:
+    </p>
+    <ol>
+      <li>Identify and explain <strong>at least three human-driven causes</strong> of
+          contemporary climate change.</li>
+      <li>Support your answer with <strong>at least one specific piece of evidence</strong>
+          (data, statistics, or a scientific source).</li>
+      <li>Propose and briefly explain <strong>two realistic mitigation strategies</strong>
+          that could reduce the rate of climate change.</li>
+    </ol>
+
+    <extendedTextInteraction responseIdentifier="RESPONSE"
+      expectedLength="400" expectedLines="15" format="plain">
+      <prompt>Write your response below (recommended: 350–500 words).</prompt>
+    </extendedTextInteraction>
+  </itemBody>
+
+  <!-- RESPONSE PROCESSING — outcome only; actual scoring is manual -->
+  <responseProcessing>
+    <!-- No automated scoring for essay items; score is set externally by a human grader. -->
+  </responseProcessing>
+
+</assessmentItem>

@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sample QTI 3.0 Multiple-Response Item with Partial Credit
+  Topic: Software Engineering — SOLID Principles
+  Demonstrates: map_response template, multiple correct answers, score mapping
+-->
+<assessmentItem
+  xmlns="http://www.imsglobal.org/xsd/imsqtiasi_v3p0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.imsglobal.org/xsd/imsqtiasi_v3p0
+    https://purl.imsglobal.org/spec/qti/v3p0/schema/xsd/imsqti_asiv3p0_v1p0.xsd"
+  identifier="item-se-solid-principles-002"
+  title="SOLID Principles: Correct Identifications"
+  adaptive="false"
+  timeDependent="false"
+  xml:lang="en-US">
+
+  <!-- RESPONSE DECLARATION with mapping for partial credit -->
+  <responseDeclaration identifier="RESPONSE" cardinality="multiple" baseType="identifier">
+    <correctResponse>
+      <value>choice_a</value>
+      <value>choice_c</value>
+      <value>choice_e</value>
+    </correctResponse>
+    <mapping defaultValue="-0.5">
+      <mapEntry mapKey="choice_a" mappedValue="1"/>
+      <mapEntry mapKey="choice_b" mappedValue="-0.5"/>
+      <mapEntry mapKey="choice_c" mappedValue="1"/>
+      <mapEntry mapKey="choice_d" mappedValue="-0.5"/>
+      <mapEntry mapKey="choice_e" mappedValue="1"/>
+    </mapping>
+  </responseDeclaration>
+
+  <!-- OUTCOME DECLARATIONS -->
+  <outcomeDeclaration identifier="SCORE" cardinality="single" baseType="float"
+    normalMaximum="3" normalMinimum="0">
+    <defaultValue>
+      <value>0</value>
+    </defaultValue>
+  </outcomeDeclaration>
+
+  <!-- ITEM BODY -->
+  <itemBody>
+    <p>
+      The SOLID principles are a set of five object-oriented design principles intended
+      to make software designs more understandable, flexible, and maintainable.
+    </p>
+    <p>
+      <strong>Select ALL statements that correctly describe a SOLID principle.</strong>
+      You may receive partial credit for partially correct answers.
+    </p>
+
+    <choiceInteraction responseIdentifier="RESPONSE" shuffle="true" maxChoices="0" minChoices="1">
+      <prompt>Choose all that apply:</prompt>
+      <simpleChoice identifier="choice_a">
+        The <em>Single Responsibility Principle</em> states that a class should have
+        only one reason to change.
+      </simpleChoice>
+      <simpleChoice identifier="choice_b">
+        The <em>Open/Closed Principle</em> states that classes should be open for
+        modification and closed for extension.
+      </simpleChoice>
+      <simpleChoice identifier="choice_c">
+        The <em>Liskov Substitution Principle</em> states that objects of a superclass
+        should be replaceable with objects of its subclasses without affecting program correctness.
+      </simpleChoice>
+      <simpleChoice identifier="choice_d">
+        The <em>Interface Segregation Principle</em> states that clients should be
+        forced to implement interfaces they do not use.
+      </simpleChoice>
+      <simpleChoice identifier="choice_e">
+        The <em>Dependency Inversion Principle</em> states that high-level modules
+        should not depend on low-level modules; both should depend on abstractions.
+      </simpleChoice>
+    </choiceInteraction>
+  </itemBody>
+
+  <!-- RESPONSE PROCESSING using map_response template -->
+  <responseProcessing
+    template="https://purl.imsglobal.org/spec/qti/v3p0/rptemplates/map_response"/>
+
+</assessmentItem>
