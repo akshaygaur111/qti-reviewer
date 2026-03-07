@@ -64,12 +64,12 @@ export default function HistoryTab() {
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 space-y-3">
         <p className="font-semibold text-amber-900">Database not connected</p>
         <p className="text-sm text-amber-800">
-          To save and retrieve review history, add a <code className="bg-white px-1 rounded">DATABASE_URL</code> environment variable pointing to a Neon PostgreSQL database.
+          To save and retrieve review history, add a <code className="bg-white px-1 rounded">MONGODB_URI</code> environment variable pointing to your MongoDB database.
         </p>
         <ol className="text-sm text-amber-800 list-decimal list-inside space-y-1">
-          <li>Create a free database at <a href="https://neon.tech" target="_blank" rel="noopener noreferrer" className="underline">neon.tech</a></li>
-          <li>Copy the connection string</li>
-          <li>Add <code className="bg-white px-1 rounded">DATABASE_URL</code> to your Vercel project environment variables</li>
+          <li>Use your existing MongoDB cluster or create a free one at <a href="https://cloud.mongodb.com" target="_blank" rel="noopener noreferrer" className="underline">MongoDB Atlas</a></li>
+          <li>Copy the connection string (include the database name, e.g. <code className="bg-white px-1 rounded">.../qti-reviewer?...</code>)</li>
+          <li>Add <code className="bg-white px-1 rounded">MONGODB_URI</code> to your Vercel project environment variables</li>
           <li>Redeploy</li>
         </ol>
       </div>

@@ -1,76 +1,84 @@
 /**
- * Database layer — Neon (serverless Postgres)
- * All writes/reads are no-ops if DATABASE_URL is not configured,
- * so the app works without a DB (results just aren't persisted).
+ * Database layer — MongoDB
+ * Uses MONGODB_URI env var. All operations are no-ops if not configured,
+ * so the app works without a DB.
  */
 
-import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
+import { MongoClient, type Db } from "mongodb";
 import type { ReviewResult, BulkReviewResponse } from "./types";
 
 // ---------------------------------------------------------------------------
-// Connection
+// Connection — cached across hot reloads in dev, shared across invocations
 // ---------------------------------------------------------------------------
 
-let _sql: NeonQueryFunction<false, false> | null = null;
-
-function getSql(): NeonQueryFunction<false, false> | null {
-  if (!process.env.DATABASE_URL) return null;
-  if (!_sql) _sql = neon(process.env.DATABASE_URL);
-  return _sql;
+declare global {
+  // eslint-disable-next-line no-var
+  var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Schema initialisation (idempotent)
-// ---------------------------------------------------------------------------
+let client: MongoClient | null = null;
+let clientPromise: Promise<MongoClient> | null = null;
 
-let _schemaReady = false;
+function getClientPromise(): Promise<MongoClient> | null {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) return null;
 
-async function ensureSchema() {
-  const sql = getSql();
-  if (!sql || _schemaReady) return;
-  await sql`
-    CREATE TABLE IF NOT EXISTS batches (
-      id          TEXT PRIMARY KEY,
-      name        TEXT,
-      total       INTEGER DEFAULT 0,
-      succeeded   INTEGER DEFAULT 0,
-      failed      INTEGER DEFAULT 0,
-      avg_score   NUMERIC(4,2) DEFAULT 0,
-      critical    INTEGER DEFAULT 0,
-      created_at  TIMESTAMPTZ DEFAULT NOW()
-    )
-  `;
-  await sql`
-    CREATE TABLE IF NOT EXISTS results (
-      id               TEXT PRIMARY KEY,
-      batch_id         TEXT REFERENCES batches(id) ON DELETE CASCADE,
-      file_name        TEXT NOT NULL,
-      item_identifier  TEXT,
-      item_title       TEXT,
-      overall_score    INTEGER DEFAULT 0,
-      overall_summary  TEXT,
-      issues           JSONB DEFAULT '[]',
-      model_used       TEXT,
-      error            TEXT,
-      created_at       TIMESTAMPTZ DEFAULT NOW()
-    )
-  `;
-  await sql`
-    CREATE INDEX IF NOT EXISTS results_batch_idx ON results(batch_id)
-  `;
-  _schemaReady = true;
+  // In development, reuse across HMR reloads
+  if (process.env.NODE_ENV === "development") {
+    if (!global._mongoClientPromise) {
+      client = new MongoClient(uri);
+      global._mongoClientPromise = client.connect();
+    }
+    return global._mongoClientPromise;
+  }
+
+  if (!clientPromise) {
+    client = new MongoClient(uri);
+    clientPromise = client.connect();
+  }
+  return clientPromise;
+}
+
+async function getDb(): Promise<Db | null> {
+  const promise = getClientPromise();
+  if (!promise) return null;
+  try {
+    const c = await promise;
+    return c.db(); // uses the database name from the URI
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Batch operations
 // ---------------------------------------------------------------------------
 
+export interface BatchDoc {
+  _id: string;
+  name: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  avg_score: number;
+  critical: number;
+  created_at: Date;
+}
+
 export async function createBatch(id: string, name: string): Promise<boolean> {
-  const sql = getSql();
-  if (!sql) return false;
+  const db = await getDb();
+  if (!db) return false;
   try {
-    await ensureSchema();
-    await sql`INSERT INTO batches (id, name) VALUES (${id}, ${name})`;
+    await db.collection<BatchDoc>("batches").insertOne({
+      _id: id,
+      name,
+      total: 0,
+      succeeded: 0,
+      failed: 0,
+      avg_score: 0,
+      critical: 0,
+      created_at: new Date(),
+    });
     return true;
   } catch {
     return false;
@@ -81,43 +89,44 @@ export async function updateBatchSummary(
   batchId: string,
   summary: BulkReviewResponse["summary"]
 ): Promise<void> {
-  const sql = getSql();
-  if (!sql) return;
+  const db = await getDb();
+  if (!db) return;
   try {
-    await sql`
-      UPDATE batches SET
-        total     = ${summary.total},
-        succeeded = ${summary.succeeded},
-        failed    = ${summary.failed},
-        avg_score = ${summary.averageScore},
-        critical  = ${summary.criticalIssueCount}
-      WHERE id = ${batchId}
-    `;
+    await db.collection<BatchDoc>("batches").updateOne(
+      { _id: batchId },
+      {
+        $set: {
+          total: summary.total,
+          succeeded: summary.succeeded,
+          failed: summary.failed,
+          avg_score: summary.averageScore,
+          critical: summary.criticalIssueCount,
+        },
+      }
+    );
   } catch { /* best-effort */ }
 }
 
-export async function listBatches() {
-  const sql = getSql();
-  if (!sql) return [];
+export async function listBatches(): Promise<BatchDoc[]> {
+  const db = await getDb();
+  if (!db) return [];
   try {
-    await ensureSchema();
-    return await sql`
-      SELECT id, name, total, succeeded, failed, avg_score, critical, created_at
-      FROM batches
-      ORDER BY created_at DESC
-      LIMIT 100
-    `;
+    return await db
+      .collection<BatchDoc>("batches")
+      .find({})
+      .sort({ created_at: -1 })
+      .limit(100)
+      .toArray();
   } catch {
     return [];
   }
 }
 
-export async function getBatch(batchId: string) {
-  const sql = getSql();
-  if (!sql) return null;
+export async function getBatch(batchId: string): Promise<BatchDoc | null> {
+  const db = await getDb();
+  if (!db) return null;
   try {
-    const rows = await sql`SELECT * FROM batches WHERE id = ${batchId}`;
-    return rows[0] ?? null;
+    return await db.collection<BatchDoc>("batches").findOne({ _id: batchId });
   } catch {
     return null;
   }
@@ -127,48 +136,41 @@ export async function getBatch(batchId: string) {
 // Result operations
 // ---------------------------------------------------------------------------
 
+export interface ResultDoc extends ReviewResult {
+  _id: string;
+  batch_id: string;
+  created_at: Date;
+}
+
 export async function saveResult(
   batchId: string,
   result: ReviewResult
 ): Promise<void> {
-  const sql = getSql();
-  if (!sql) return;
+  const db = await getDb();
+  if (!db) return;
   try {
-    await ensureSchema();
-    const id = crypto.randomUUID();
-    await sql`
-      INSERT INTO results
-        (id, batch_id, file_name, item_identifier, item_title,
-         overall_score, overall_summary, issues, model_used, error)
-      VALUES
-        (${id}, ${batchId}, ${result.fileName}, ${result.itemIdentifier},
-         ${result.itemTitle}, ${result.overallScore}, ${result.overallSummary},
-         ${JSON.stringify(result.issues)}, ${result.modelUsed},
-         ${result.error ?? null})
-    `;
+    await db.collection<ResultDoc>("results").insertOne({
+      ...result,
+      _id: crypto.randomUUID(),
+      batch_id: batchId,
+      created_at: new Date(),
+    });
   } catch { /* best-effort */ }
 }
 
 export async function getBatchResults(batchId: string): Promise<ReviewResult[]> {
-  const sql = getSql();
-  if (!sql) return [];
+  const db = await getDb();
+  if (!db) return [];
   try {
-    const rows = await sql`
-      SELECT * FROM results WHERE batch_id = ${batchId} ORDER BY created_at ASC
-    `;
-    return rows.map((r) => ({
-      itemIdentifier: r.item_identifier ?? "",
-      itemTitle: r.item_title ?? "",
-      fileName: r.file_name,
-      overallScore: Number(r.overall_score),
-      overallSummary: r.overall_summary ?? "",
-      issues: Array.isArray(r.issues) ? r.issues : JSON.parse(r.issues ?? "[]"),
-      modelUsed: r.model_used ?? "",
-      error: r.error ?? undefined,
-    }));
+    const docs = await db
+      .collection<ResultDoc>("results")
+      .find({ batch_id: batchId })
+      .sort({ created_at: 1 })
+      .toArray();
+    return docs.map(({ _id: _id, batch_id: _bid, created_at: _cat, ...rest }) => rest);
   } catch {
     return [];
   }
 }
 
-export const dbAvailable = () => Boolean(process.env.DATABASE_URL);
+export const dbAvailable = () => Boolean(process.env.MONGODB_URI);
