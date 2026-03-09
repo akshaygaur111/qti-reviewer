@@ -50,14 +50,6 @@ export default function SheetsInput({ onAdd, disabled }: Props) {
           <path d="M19 3H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2zm-7 3h5v2h-5V6zm0 4h5v2h-5v-2zm0 4h5v2h-5v-2zM7 6h3v2H7V6zm0 4h3v2H7v-2zm0 4h3v2H7v-2z"/>
         </svg>
         <p className="text-sm font-semibold text-blue-900">Load from Google Sheet</p>
-        <a
-          href="https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms/copy"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="ml-auto text-xs text-blue-600 hover:underline"
-        >
-          Copy template ↗
-        </a>
       </div>
 
       <p className="text-xs text-blue-700">
