@@ -85,10 +85,31 @@ export async function fetchAlphaItemXml(id: string): Promise<string> {
  */
 export async function processAlphaItemResponse(
   id: string,
-  responses: unknown
+  payload: any
 ): Promise<unknown> {
   const token = await getToken();
   const url = `${BASE_URL}/api/assessment-items/${encodeURIComponent(id)}/process-response`;
+
+  // The Alpha API expects the payload to be wrapped in a "responses" key for multiple answers,
+  // or use root "identifier" and "response" for single answers.
+  // Based on user feedback, we wrap it in "responses".
+
+  let finalBody: any;
+  if (payload && typeof payload === "object") {
+    if ("responses" in payload) {
+      // Already wrapped by AI or caller
+      finalBody = payload;
+    } else if ("identifier" in payload && "response" in payload) {
+      // Single answer format (identifier/response) — keep as is
+      finalBody = payload;
+    } else {
+      // Flat map of identifiers — wrap it
+      finalBody = { responses: payload };
+    }
+  } else {
+    // Fallback/empty
+    finalBody = { responses: payload ?? {} };
+  }
 
   const res = await fetch(url, {
     method: "POST",
@@ -96,7 +117,7 @@ export async function processAlphaItemResponse(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(responses),
+    body: JSON.stringify(finalBody),
   });
 
   const text = await res.text();

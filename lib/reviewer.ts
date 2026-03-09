@@ -24,12 +24,24 @@ Analyse QTI 3.0 assessment items and report issues across six categories:
 5. qti_compliance — QTI 3.0 required attributes (identifier, title, adaptive, timeDependent), responseIdentifier cross-references, structural validity.
 6. accessibility — Alt text for images that are actually present, xml:lang, reading level, inclusive language.
 
+## QTI 3.0 Strict Compliance Rules (CRITICAL)
+The renderer now operates in strict mode. You MUST flag these as issues:
+- **Missing Response Processing**: If <qti-feedback-block> or <qti-feedback-inline> exists, there MUST be <qti-response-processing> that sets the corresponding outcome variable.
+- **Missing outcome-identifier**: Every <qti-feedback-block> and <qti-feedback-inline> MUST have an 'outcome-identifier' attribute.
+- **match_correct Template**: The 'match_correct' template ONLY works for a single response declaration named 'RESPONSE'. If there are multiple response declarations (e.g. RESPONSE1, RESPONSE2), flag the use of match_correct and recommend custom inline <qti-response-processing>.
+- **SCORE Correctness**: The <qti-outcome-declaration identifier="SCORE"> MUST have a 'normalMaximum' attribute for correctness to be determined accurately.
+- **Mandatory Answers**: In strict mode, MCQ is optional unless 'min-choices="1"' is set, and Extended Text is optional unless 'required="true"' is set. Recommend adding these if the question intent is clearly mandatory.
+
 ## Behavioral Verification (NEW)
 As part of your review, you must generate a set of test cases to verify the item behaves as expected when submitted to a scoring engine.
 Generate 3-5 logical test cases covering:
 - The correct answer(s)
 - Common misconceptions or plausible distractors
 - Edge cases (e.g., partial credit if applicable)
+
+The "payload" for each test case MUST be a flat object mapping response identifiers to values. 
+DO NOT wrap it in a "responses" key yourself; the system will handle that.
+Example: { "RESPONSE_1": "A", "RESPONSE_2": "B" }
 
 Respond ONLY with valid JSON (no markdown, no extra text):
 {
