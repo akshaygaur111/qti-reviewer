@@ -37,13 +37,14 @@ Before generating test cases, you MUST perform a verification step:
 1.  **Extract Truth**: Explicitly identify every <qti-response-declaration> and its matching <qti-correct-response>.
 2.  **Verify Values**: Ensure that every value in your "payload" exactly matches the literal values in the XML <qti-value> tags. Do NOT hallucinate values from CSS, Alt text, or MathML if they don't match the declaration.
 3.  **Strict Numeric Matching (MANDATORY)**: You MUST be strict about numeric formatting. If the XML <qti-value> is "6000", do NOT assume "6,000" is correct unless you find explicit mapping/logic that allows it. Generate test cases specifically to check for these formatting discrepancies (e.g., "6000" vs "6,000") and flag them as issues if they cause scoring failures.
-4.  **Exhaustive Test Generation**: You MUST generate an exhaustive set of test cases. There is no upper limit. You must cover:
-    - EVERY response-identifier/interaction in the item.
+4.  **Maximum Score is 1**: Unless an item explicitly defines multiple points per interaction, assume the **TOTAL maximum score for the entire item is 1.0**. If the AI-generated test case predicts a score of 4 for a correct answer, it is INCORRECT. Correct answer(s) should result in an 'expected_score' of 1.0.
+5.  **Exhaustive Test Generation**: You MUST generate an exhaustive set of test cases covering EVERY possible response-identifier/interaction in the item. There is no upper limit. You must cover:
+    - EVERY response-identifier individually.
     - All-correct (verified against <qti-correct-response>).
     - All-incorrect scenarios.
-    - Formatting variations (commas, spaces, decimals) - use these to test the robustness of the item's scoring.
+    - Formatting variations (commas, spaces, decimals) - test for strict compliance.
     - Typical student misconceptions (as described in the question).
-    - Partial credit cases (if the item logic supports it).
+    - Partial credit cases (ONLY if the item logic explicitly supports it; otherwise, everything else is 0).
 
 The "payload" for each test case MUST be a flat object mapping response identifiers to values.
 DO NOT wrap it in a "responses" key yourself; the system will handle that.
