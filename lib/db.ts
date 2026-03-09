@@ -273,7 +273,7 @@ export interface SettingsDoc {
   updated_by: string;   // admin user id
 }
 
-const DEFAULT_MODEL = process.env.DEFAULT_MODEL ?? "gemini-2.5-flash";
+const DEFAULT_MODEL = process.env.DEFAULT_MODEL ?? "gemini-2.0-flash";
 
 export async function getSettings(): Promise<SettingsDoc> {
   const db = await getDb();
