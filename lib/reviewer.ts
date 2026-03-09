@@ -36,10 +36,12 @@ The renderer now operates in strict mode. You MUST flag these as issues:
 Before generating test cases, you MUST perform a verification step:
 1.  **Extract Truth**: Explicitly identify every <qti-response-declaration> and its matching <qti-correct-response>.
 2.  **Verify Values**: Ensure that every value in your "payload" exactly matches the literal values in the XML <qti-value> tags. Do NOT hallucinate values from CSS, Alt text, or MathML if they don't match the declaration.
-3.  **Generate Cases**: Create 3-5 logical test cases:
+3.  **Handle Numeric Formats**: Be aware that the Alpha engine is often lenient with numeric formatting. For example, if the correct value is "6000", the engine will likely accept "6,000" as correct. Do NOT predict a Score of 0 for correct numeric variations unless the item specifically requires a literal string match.
+4.  **Generate Dynamic Cases**: Create a variable number of test cases (anywhere from 3 to 10) depending on the complexity of the item. Do not feel limited to 3-5 cases if the item has many interactions. Cover:
     - The correct answer(s) (verified against <qti-correct-response>)
-    - Common misconceptions or plausible distractors
-    - Edge cases (e.g., partial credit if applicable)
+    - Human-friendly variations (commas, spaces) - predict high score if logical.
+    - Common misconceptions or plausible distractors.
+    - Edge cases (e.g., partial credit if applicable).
 
 The "payload" for each test case MUST be a flat object mapping response identifiers to values. 
 DO NOT wrap it in a "responses" key yourself; the system will handle that.
@@ -363,8 +365,8 @@ function generateDeterministicTestCases(summary: QTIItemSummary): any[] {
 function buildUserPrompt(summary: QTIItemSummary, rawXml: string): string {
   const summaryJson = JSON.stringify(summary, null, 2);
   const xmlExcerpt =
-    rawXml.length > 8000
-      ? rawXml.slice(0, 8000) + "\n[...truncated...]"
+    rawXml.length > 30000
+      ? rawXml.slice(0, 30000) + "\n[...truncated...]"
       : rawXml;
   return [
     "Please review the following QTI 3.0 assessment item.\n",
