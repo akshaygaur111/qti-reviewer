@@ -4,7 +4,7 @@ import type { ReviewResult } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
     try {
-        const { results } = (await req.json()) as { results: ReviewResult[] };
+        const { results, filename } = (await req.json()) as { results: ReviewResult[]; filename?: string };
         if (!results || !Array.isArray(results)) {
             return NextResponse.json({ error: "Missing or invalid 'results' array." }, { status: 400 });
         }
@@ -36,8 +36,9 @@ export async function POST(req: NextRequest) {
             const testsTotal = r.behavioralTests?.length || 0;
             const testStr = testsTotal > 0 ? `${testsPass}/${testsTotal} Pass` : "N/A";
 
+            const rowId = r.itemIdentifier || r.sourceItemId || r.fileName;
             summarySheet.addRow({
-                id: r.itemIdentifier || r.fileName,
+                id: rowId,
                 title: r.itemTitle || "Untitled",
                 score: r.overallScore,
                 critical: crit,
@@ -64,9 +65,10 @@ export async function POST(req: NextRequest) {
         ];
 
         results.forEach((r) => {
+            const rowId = r.itemIdentifier || r.sourceItemId || r.fileName;
             r.issues.forEach((issue) => {
                 issueSheet.addRow({
-                    id: r.itemIdentifier,
+                    id: rowId,
                     category: issue.category,
                     severity: issue.severity,
                     message: issue.message,
@@ -90,6 +92,7 @@ export async function POST(req: NextRequest) {
         ];
 
         results.forEach((r) => {
+            const rowId = r.itemIdentifier || r.sourceItemId || r.fileName;
             r.behavioralTests?.forEach((test) => {
                 const expectedStr = [
                     test.expectedIsCorrect !== undefined ? `Comp: ${test.expectedIsCorrect}` : "",
@@ -102,7 +105,7 @@ export async function POST(req: NextRequest) {
                 ].filter(Boolean).join(", ");
 
                 testSheet.addRow({
-                    id: r.itemIdentifier,
+                    id: rowId,
                     label: test.label,
                     status: test.status.toUpperCase(),
                     expected: expectedStr,
@@ -116,11 +119,13 @@ export async function POST(req: NextRequest) {
 
         const buffer = await workbook.xlsx.writeBuffer();
 
+        const reportName = filename || `QTI_Review_Report_${Date.now()}.xlsx`;
+
         return new NextResponse(buffer, {
             status: 200,
             headers: {
                 "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "Content-Disposition": `attachment; filename="QTI_Review_Report_${Date.now()}.xlsx"`,
+                "Content-Disposition": `attachment; filename="${reportName}"`,
             },
         });
     } catch (err) {

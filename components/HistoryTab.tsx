@@ -40,6 +40,41 @@ export default function HistoryTab() {
     } catch { /* ignore */ }
     finally { setLoadingBatch(null); }
   }
+  async function handleExportExcel(batchId: string, batchName: string) {
+    let results = batchResults[batchId];
+    if (!results) {
+      try {
+        const res = await fetch(`/api/history/batches/${batchId}`);
+        const data = await res.json();
+        results = data.results ?? [];
+        setBatchResults((prev) => ({ ...prev, [batchId]: results }));
+      } catch {
+        alert("Failed to load results for export");
+        return;
+      }
+    }
+
+    try {
+      const res = await fetch("/api/review/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          results,
+          filename: `review-${batchName.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}.xlsx`
+        }),
+      });
+      if (!res.ok) throw new Error("Excel export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `review-${batchName.toLowerCase().replace(/\s+/g, "-")}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Export failed: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
 
   function formatDate(iso: string) {
     return new Date(iso).toLocaleString(undefined, {
@@ -126,7 +161,18 @@ export default function HistoryTab() {
 
             {isExpanded && (
               <div className="border-t border-gray-100 p-4 space-y-4">
-                {batch.total > 0 && <BulkSummaryBar summary={summary} />}
+                <div className="flex items-center justify-between gap-4">
+                  {batch.total > 0 && <BulkSummaryBar summary={summary} />}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleExportExcel(batch.id, batch.name); }}
+                    className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Excel Report
+                  </button>
+                </div>
                 {loadingBatch === batch.id ? (
                   <p className="text-sm text-gray-500 text-center py-4">Loading results…</p>
                 ) : results?.length ? (

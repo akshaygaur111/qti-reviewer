@@ -102,7 +102,10 @@ function SingleTab() {
       const res = await fetch("/api/review/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ results: [result] }),
+        body: JSON.stringify({
+          results: [result],
+          filename: `review-${result.itemIdentifier || itemId || "item"}-${Date.now()}.xlsx`
+        }),
       });
       if (!res.ok) throw new Error("Excel export failed");
       const blob = await res.blob();
@@ -426,7 +429,10 @@ function BulkTab() {
       const res = await fetch("/api/review/export", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ results }),
+        body: JSON.stringify({
+          results,
+          filename: `bulk-review-${Date.now()}.xlsx`
+        }),
       });
       if (!res.ok) throw new Error("Excel export failed");
       const blob = await res.blob();
