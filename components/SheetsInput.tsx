@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { SheetItem } from "@/app/api/sheets/route";
 
 interface Props {
-  onAdd: (items: { name: string; xmlUrl: string }[]) => void;
+  onAdd: (items: SheetItem[]) => void;
   disabled?: boolean;
 }
 
@@ -53,7 +53,7 @@ export default function SheetsInput({ onAdd, disabled }: Props) {
       </div>
 
       <p className="text-xs text-blue-700">
-        Sheet must be publicly shared. Columns: <code className="bg-white px-1 rounded">name</code> (optional) and <code className="bg-white px-1 rounded">url</code> — each row is a URL to a raw QTI XML file.
+        Sheet must be publicly shared. Supported columns: <code className="bg-white px-1 rounded">name</code> (optional) + <code className="bg-white px-1 rounded">url</code> for XML URLs, or <code className="bg-white px-1 rounded">name</code> + <code className="bg-white px-1 rounded">id</code> for alpha-1edtech item IDs.
       </p>
 
       <div className="flex gap-2">
@@ -101,7 +101,8 @@ export default function SheetsInput({ onAdd, disabled }: Props) {
             {preview.map((item, i) => (
               <li key={i} className="px-3 py-1.5 text-xs text-gray-700 truncate">
                 <span className="font-medium text-gray-900">{item.name}</span>
-                <span className="text-gray-400 ml-2 truncate">{item.xmlUrl}</span>
+                {item.xmlUrl && <span className="text-gray-400 ml-2 truncate">{item.xmlUrl}</span>}
+                {item.itemId && <span className="text-purple-400 ml-2">ID: {item.itemId}</span>}
               </li>
             ))}
           </ul>
