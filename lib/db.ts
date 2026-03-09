@@ -316,11 +316,12 @@ export async function ensureDefaultAdmin(): Promise<void> {
   const db = await getDb();
   if (!db) return;
 
-  const count = await userCount();
-  if (count > 0) return;   // already initialised
-
-  const username = process.env.ADMIN_USERNAME ?? "admin";
+  const username = (process.env.ADMIN_USERNAME ?? "admin").toLowerCase();
   const password = process.env.ADMIN_PASSWORD ?? "changeme";
+
+  // Only seed if this specific admin user doesn't exist yet
+  const existing = await findUserByUsername(username);
+  if (existing) return;
 
   const hash = await bcrypt.hash(password, 10);
 
