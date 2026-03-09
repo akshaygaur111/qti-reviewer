@@ -1,17 +1,68 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken, SESSION_COOKIE } from "@/lib/auth";
+import { SESSION_COOKIE } from "@/lib/auth";
 
+// ---------------------------------------------------------------------------
+// Edge-compatible JWT verification using Web Crypto API
+// Compatible with tokens signed by jsonwebtoken (HS256)
+// ---------------------------------------------------------------------------
+
+interface SessionUser {
+  id: string;
+  username: string;
+  role: "admin" | "user";
+  exp?: number;
+}
+
+function b64urlDecode(s: string): Uint8Array {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+  const bin = atob(padded);
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+
+async function verifyJWT(token: string): Promise<SessionUser | null> {
+  try {
+    const secret = process.env.JWT_SECRET;
+    if (!secret) return null;
+
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+
+    const [headerB64, payloadB64, sigB64] = parts;
+    const keyData = new TextEncoder().encode(secret);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      keyData,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["verify"]
+    );
+
+    const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+    const sig = b64urlDecode(sigB64);
+    const valid = await crypto.subtle.verify("HMAC", key, sig, data);
+    if (!valid) return null;
+
+    const payload = JSON.parse(new TextDecoder().decode(b64urlDecode(payloadB64)));
+    if (payload.exp && payload.exp < Date.now() / 1000) return null;
+
+    return payload as SessionUser;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Routes that do NOT require authentication
-const PUBLIC_PATHS = [
-  "/login",
-  "/api/auth/login",   // login endpoint itself
-];
+// ---------------------------------------------------------------------------
+
+const PUBLIC_PATHS = ["/login", "/api/auth/login"];
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
 }
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Always allow Next.js internals and static files
@@ -27,14 +78,12 @@ export function middleware(req: NextRequest) {
 
   // Verify session cookie
   const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const user  = token ? verifyToken(token) : null;
+  const user = token ? await verifyJWT(token) : null;
 
   if (!user) {
-    // API requests → 401
     if (pathname.startsWith("/api/")) {
       return NextResponse.json({ error: "Unauthorised" }, { status: 401 });
     }
-    // Page requests → redirect to /login
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

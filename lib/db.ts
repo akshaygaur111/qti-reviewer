@@ -5,6 +5,7 @@
  */
 
 import { MongoClient, type Db } from "mongodb";
+import bcrypt from "bcryptjs";
 import type { ReviewResult, BulkReviewResponse } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -321,9 +322,7 @@ export async function ensureDefaultAdmin(): Promise<void> {
   const username = process.env.ADMIN_USERNAME ?? "admin";
   const password = process.env.ADMIN_PASSWORD ?? "changeme";
 
-  // Lazy import to avoid circular deps and keep server-only bcrypt out of edge runtime
-  const { hashPassword } = await import("./auth");
-  const hash = await hashPassword(password);
+  const hash = await bcrypt.hash(password, 10);
 
   await createUser({
     _id: crypto.randomUUID(),
