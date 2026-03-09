@@ -32,12 +32,14 @@ The renderer now operates in strict mode. You MUST flag these as issues:
 - **SCORE Correctness**: The <qti-outcome-declaration identifier="SCORE"> MUST have a 'normalMaximum' attribute for correctness to be determined accurately.
 - **Mandatory Answers**: In strict mode, MCQ is optional unless 'min-choices="1"' is set, and Extended Text is optional unless 'required="true"' is set. Recommend adding these if the question intent is clearly mandatory.
 
-## Behavioral Verification (NEW)
-As part of your review, you must generate a set of test cases to verify the item behaves as expected when submitted to a scoring engine.
-Generate 3-5 logical test cases covering:
-- The correct answer(s)
-- Common misconceptions or plausible distractors
-- Edge cases (e.g., partial credit if applicable)
+## Behavioral Verification (CRITICAL)
+Before generating test cases, you MUST perform a verification step:
+1.  **Extract Truth**: Explicitly identify every <qti-response-declaration> and its matching <qti-correct-response>.
+2.  **Verify Values**: Ensure that every value in your "payload" exactly matches the literal values in the XML <qti-value> tags. Do NOT hallucinate values from CSS, Alt text, or MathML if they don't match the declaration.
+3.  **Generate Cases**: Create 3-5 logical test cases:
+    - The correct answer(s) (verified against <qti-correct-response>)
+    - Common misconceptions or plausible distractors
+    - Edge cases (e.g., partial credit if applicable)
 
 The "payload" for each test case MUST be a flat object mapping response identifiers to values. 
 DO NOT wrap it in a "responses" key yourself; the system will handle that.
@@ -80,7 +82,7 @@ export class QTIReviewer {
   private model: GenerativeModel;
   private modelName: string;
 
-  constructor(apiKey: string, modelName = "gemini-2.5-flash") {
+  constructor(apiKey: string, modelName = "gemini-2.0-flash") {
     const genAI = new GoogleGenerativeAI(apiKey);
     this.modelName = modelName;
     this.model = genAI.getGenerativeModel({
