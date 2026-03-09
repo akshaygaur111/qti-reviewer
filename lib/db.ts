@@ -311,25 +311,37 @@ export async function updateSettings(
 // ---------------------------------------------------------------------------
 
 /** Called at startup by auth routes. Creates the admin account from env vars
- *  if no users exist yet. Safe to call multiple times. */
+ *  if no users exist yet. Safe to call multiple times.
+ *  Also updates the admin password if the env var changed since last seed. */
 export async function ensureDefaultAdmin(): Promise<void> {
   const db = await getDb();
-  if (!db) return;
+  if (!db) {
+    console.error("[ensureDefaultAdmin] No DB connection — MONGODB_URI may be missing or unreachable");
+    return;
+  }
 
   const username = (process.env.ADMIN_USERNAME ?? "admin").toLowerCase();
   const password = process.env.ADMIN_PASSWORD ?? "changeme";
 
-  // Only seed if this specific admin user doesn't exist yet
   const existing = await findUserByUsername(username);
-  if (existing) return;
+  if (!existing) {
+    console.log(`[ensureDefaultAdmin] Creating admin user: ${username}`);
+    const hash = await bcrypt.hash(password, 10);
+    await createUser({
+      _id: crypto.randomUUID(),
+      username,
+      password: hash,
+      role: "admin",
+      created_by: null,
+    });
+    return;
+  }
 
-  const hash = await bcrypt.hash(password, 10);
-
-  await createUser({
-    _id: crypto.randomUUID(),
-    username,
-    password: hash,
-    role: "admin",
-    created_by: null,
-  });
+  // If the env-var password no longer matches the stored hash, resync it.
+  const passwordMatches = await bcrypt.compare(password, existing.password);
+  if (!passwordMatches) {
+    console.log(`[ensureDefaultAdmin] Admin password env var changed — updating hash for: ${username}`);
+    const hash = await bcrypt.hash(password, 10);
+    await updateUserPassword(existing._id, hash);
+  }
 }
