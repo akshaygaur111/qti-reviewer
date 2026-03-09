@@ -7,7 +7,9 @@ export async function GET() {
   if (!dbAvailable()) {
     return NextResponse.json({ batches: [], dbAvailable: false });
   }
-  const batches = await listBatches();
+  const docs = await listBatches();
+  // Map MongoDB _id → id for the client
+  const batches = docs.map(({ _id, ...rest }) => ({ id: _id, ...rest }));
   return NextResponse.json({ batches, dbAvailable: true });
 }
 

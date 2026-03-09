@@ -80,6 +80,8 @@ export interface ReviewResult {
   issues: Issue[];
   modelUsed: string;
   error?: string;
+  /** Set when the item was fetched from the alpha-1edtech API by ID */
+  sourceItemId?: string;
 }
 
 // ---------------------------------------------------------------------------

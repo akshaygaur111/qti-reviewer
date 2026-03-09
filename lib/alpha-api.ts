@@ -78,5 +78,36 @@ export async function fetchAlphaItemXml(id: string): Promise<string> {
   return res.text();
 }
 
+/**
+ * Call the process-response endpoint for an assessment item.
+ * `responses` is the candidate responses payload (passed through as-is).
+ * Returns the raw JSON from the API.
+ */
+export async function processAlphaItemResponse(
+  id: string,
+  responses: unknown
+): Promise<unknown> {
+  const token = await getToken();
+  const url = `${BASE_URL}/api/assessment-items/${encodeURIComponent(id)}/process-response`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(responses),
+  });
+
+  const text = await res.text();
+  let data: unknown;
+  try { data = JSON.parse(text); } catch { data = text; }
+
+  if (!res.ok) {
+    throw new Error(`process-response failed (HTTP ${res.status}): ${text}`);
+  }
+  return data;
+}
+
 export const alphaApiConfigured = () =>
   Boolean(process.env.ALPHA1_CLIENT_ID && process.env.ALPHA1_CLIENT_SECRET);

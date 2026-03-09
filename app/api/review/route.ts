@@ -69,6 +69,11 @@ export async function POST(req: NextRequest) {
     const reviewer = new QTIReviewer(apiKey, model);
     const result = await reviewer.reviewItem(summary, xml, fileName);
 
+    // Carry the alpha API item ID forward so the client can call process-response
+    if (body.itemId) {
+      result.sourceItemId = body.itemId;
+    }
+
     // Persist to DB (no-op if DATABASE_URL not set)
     if (body.batchId) {
       await saveResult(body.batchId, result);
