@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseQTIXml } from "@/lib/parser";
 import { QTIReviewer } from "@/lib/reviewer";
 import { saveResult, getSettings } from "@/lib/db";
-import { fetchAlphaItemXml } from "@/lib/alpha-api";
+import { fetchAlphaItemXml, processAlphaItemResponse } from "@/lib/alpha-api";
 import type { ReviewRequest } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -69,9 +69,56 @@ export async function POST(req: NextRequest) {
     const reviewer = new QTIReviewer(apiKey, model);
     const result = await reviewer.reviewItem(summary, xml, fileName);
 
-    // Carry the alpha API item ID forward so the client can call process-response
+    // Carry the alpha API item ID forward
     if (body.itemId) {
       result.sourceItemId = body.itemId;
+
+      // Phase 1: Orchestrate Behavioral Testing
+      const alphaConfigured = Boolean(process.env.ALPHA1_CLIENT_ID && process.env.ALPHA1_CLIENT_SECRET);
+      if (alphaConfigured && result.behavioralTests && result.behavioralTests.length > 0) {
+        const testResults = await Promise.all(
+          result.behavioralTests.map(async (test) => {
+            try {
+              const apiResponse = await processAlphaItemResponse(body.itemId!, test.payload) as any;
+
+              const actualScore = apiResponse?.score !== undefined ? Number(apiResponse.score) : undefined;
+              const actualIsCorrect = apiResponse?.isCorrect !== undefined ? Boolean(apiResponse.isCorrect) : undefined;
+
+              let status: "pass" | "fail" | "error" = "pass";
+              let errorMsg = "";
+
+              if (test.expectedIsCorrect !== undefined && actualIsCorrect !== test.expectedIsCorrect) {
+                status = "fail";
+                errorMsg += `isCorrect mismatch: expected ${test.expectedIsCorrect}, got ${actualIsCorrect}. `;
+              }
+
+              if (test.expectedScore !== undefined && actualScore !== undefined) {
+                // Use a small epsilon for float comparison if needed, but here we assume discrete scores for now
+                if (Math.abs(actualScore - test.expectedScore) > 0.001) {
+                  status = "fail";
+                  errorMsg += `Score mismatch: expected ${test.expectedScore}, got ${actualScore}. `;
+                }
+              }
+
+              return {
+                ...test,
+                actualScore,
+                actualIsCorrect,
+                status,
+                error: errorMsg.trim() || undefined,
+                responseBody: apiResponse,
+              };
+            } catch (err) {
+              return {
+                ...test,
+                status: "error" as const,
+                error: err instanceof Error ? err.message : String(err),
+              };
+            }
+          })
+        );
+        result.behavioralTests = testResults;
+      }
     }
 
     // Persist to DB (no-op if DATABASE_URL not set)

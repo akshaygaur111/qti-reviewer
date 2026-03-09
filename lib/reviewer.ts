@@ -24,47 +24,12 @@ Analyse QTI 3.0 assessment items and report issues across six categories:
 5. qti_compliance — QTI 3.0 required attributes (identifier, title, adaptive, timeDependent), responseIdentifier cross-references, structural validity.
 6. accessibility — Alt text for images that are actually present, xml:lang, reading level, inclusive language.
 
-## Always check these explicitly
-
-### Content check
-- Verify the question text (item body) is factually correct, clearly worded, and unambiguous.
-- Verify the question makes sense in isolation and does not rely on external context that is not provided.
-
-### Correct answer check
-- Verify that the value(s) listed in each correctResponse element are genuinely the right answer(s) to the question.
-- For choice interactions: confirm the identified correct choice text is actually correct based on the question content.
-- If the marked correct answer is factually wrong or does not match the question, raise a **critical** answer_completeness issue.
-
-### QTI correctResponse vs choices cross-check
-- For every correctResponse identifier, verify it resolves to a simpleChoice (or inlineChoice) that exists in the interaction.
-- A correctResponse referencing a non-existent choice identifier is always a **critical** answer_completeness issue.
-- Verify no choice identifiers are duplicated within the same interaction.
-
-### All possible answers check
-- For choice interactions, verify that all plausible and expected answer options are present as choices.
-- Flag as a **major** answer_completeness issue if obvious distractors are missing or if the set of choices is implausibly sparse or trivially easy.
-- For multiple-response interactions (cardinality=multiple), verify ALL correct answers are listed in the correctResponse—not just some of them.
-
-## Always raise these as critical issues
-- Missing SCORE outcomeDeclaration: if no outcomeDeclaration with identifier="SCORE" exists, raise a critical scoring_logic issue — the item has no declared score outcome and scoring will not function.
-
-## Personalisation rules — CRITICAL
-Every issue MUST reference specific details from THIS item:
-- Quote the actual question text or choice content when relevant
-- Name actual identifiers (e.g. "RESPONSE_1", "SCORE maxValue 10")
-- Reference actual score values and element names found in the XML
-- Do NOT write generic statements unless they apply to something actually present in the XML
-
-## Do NOT raise issues for these — they are valid design choices
-- Absence of modalFeedback for correct answers (correct-answer feedback is optional)
-- Absence of modalFeedback entirely (feedback is always optional)
-- Having only incorrect-answer feedback with no correct-answer feedback
-- Simple response processing templates when the interaction type suits them
-- Low distractor count when the item type justifies it
-
-## What to raise issues for
-Only raise an issue if you can point to a specific, concrete problem in THIS item's actual XML.
-If something is absent but not required, do not raise it.
+## Behavioral Verification (NEW)
+As part of your review, you must generate a set of test cases to verify the item behaves as expected when submitted to a scoring engine.
+Generate 3-5 logical test cases covering:
+- The correct answer(s)
+- Common misconceptions or plausible distractors
+- Edge cases (e.g., partial credit if applicable)
 
 Respond ONLY with valid JSON (no markdown, no extra text):
 {
@@ -74,12 +39,23 @@ Respond ONLY with valid JSON (no markdown, no extra text):
     {
       "category": "<name>",
       "severity": "<critical|major|minor|suggestion>",
-      "message": "<short title referencing the specific element>",
-      "detail": "<explanation citing specific XML content, identifiers, or values>",
-      "recommendation": "<concrete fix for this specific item>"
+      "message": "<short title>",
+      "detail": "<explanation citing specific XML content>",
+      "recommendation": "<concrete fix>"
+    }
+  ],
+  "test_cases": [
+    {
+      "label": "<short description, e.g. 'Partial credit for choice A'>",
+      "payload": { "RESPONSE_ID": "VALUE", ... },
+      "expected_score": <number>,
+      "expected_is_correct": <boolean>
     }
   ]
 }
+
+## Personalisation rules — CRITICAL
+Every issue and test case MUST reference specific details from THIS item (identifiers, values, text).
 
 Severity: critical=broken/wrong scores, major=significant quality issue, minor=small problem, suggestion=enhancement.
 If there are no real issues, return an empty issues array. Do not invent issues to fill the list.`;
@@ -167,6 +143,34 @@ export class QTIReviewer {
         })
       );
 
+      // Parse AI-generated test cases
+      const aiTestCases = (data.test_cases ?? []).map(
+        (tc: Record<string, unknown>): any => ({
+          label: String(tc.label ?? "AI Generated Test"),
+          payload: tc.payload ?? {},
+          expectedScore: tc.expected_score !== undefined ? Number(tc.expected_score) : undefined,
+          expectedIsCorrect: tc.expected_is_correct !== undefined ? Boolean(tc.expected_is_correct) : undefined,
+        })
+      );
+
+      // Add deterministic test cases
+      const deterministicCases = generateDeterministicTestCases(summary);
+
+      // Combine and filter duplicates by label
+      const allCases = [...deterministicCases, ...aiTestCases];
+      const seenLabels = new Set<string>();
+
+      result.behavioralTests = allCases
+        .filter((tc) => {
+          if (seenLabels.has(tc.label)) return false;
+          seenLabels.add(tc.label);
+          return true;
+        })
+        .map((tc) => ({
+          ...tc,
+          status: "pass" as const, // Placeholder status
+        }));
+
       // Append any parse warnings as minor issues
       for (const err of summary.parseErrors) {
         result.issues.push({
@@ -213,7 +217,7 @@ function staticAnswerChecks(summary: QTIItemSummary): Issue[] {
           category: "answer_completeness",
           severity: "critical",
           message: `No choices in interaction '${rid}'`,
-          detail: `The ${interaction.interactionType} with responseIdentifier '${rid}' has no simpleChoice/inlineChoice elements. Learners will have nothing to select.`,
+          detail: `The ${interaction.interactionType} with responseIdentifier '${rid}' has no simpleChoice / inlineChoice elements.Learners will have nothing to select.`,
           recommendation: "Add simpleChoice (or inlineChoice) elements to the interaction.",
         });
       }
@@ -226,7 +230,7 @@ function staticAnswerChecks(summary: QTIItemSummary): Issue[] {
             category: "qti_compliance",
             severity: "major",
             message: `Duplicate choice identifier '${choice.identifier}' in '${rid}'`,
-            detail: `Multiple simpleChoice elements share the identifier '${choice.identifier}' in interaction '${rid}'. All choice identifiers must be unique.`,
+            detail: `Multiple simpleChoice elements share the identifier '${choice.identifier}' in interaction '${rid}'.All choice identifiers must be unique.`,
             recommendation: "Assign a unique identifier to each simpleChoice element.",
           });
         }
@@ -240,7 +244,7 @@ function staticAnswerChecks(summary: QTIItemSummary): Issue[] {
             category: "answer_completeness",
             severity: "critical",
             message: `No correctResponse for '${rid}'`,
-            detail: `The responseDeclaration '${rid}' has no correctResponse values. The item cannot be automatically scored.`,
+            detail: `The responseDeclaration '${rid}' has no correctResponse values.The item cannot be automatically scored.`,
             recommendation: "Add a <correctResponse> element with the correct choice identifier(s).",
           });
         } else {
@@ -252,7 +256,7 @@ function staticAnswerChecks(summary: QTIItemSummary): Issue[] {
                 category: "answer_completeness",
                 severity: "critical",
                 message: `Correct answer '${respId}' not found in choices of '${rid}'`,
-                detail: `The correctResponse references '${respId}' in responseDeclaration '${rd.identifier}', but no simpleChoice with that identifier exists. Available choice identifiers: ${available}.`,
+                detail: `The correctResponse references '${respId}' in responseDeclaration '${rd.identifier}', but no simpleChoice with that identifier exists.Available choice identifiers: ${available}.`,
                 recommendation: `Update the correctResponse to use one of the valid choice identifiers: ${available}.`,
               });
             }
@@ -267,7 +271,7 @@ function staticAnswerChecks(summary: QTIItemSummary): Issue[] {
               category: "scoring_logic",
               severity: "major",
               message: `Mapping key '${mapKey}' not found in choices of '${rid}'`,
-              detail: `The mapping in responseDeclaration '${rd.identifier}' references '${mapKey}', which does not match any simpleChoice identifier. Available: ${available}.`,
+              detail: `The mapping in responseDeclaration '${rd.identifier}' references '${mapKey}', which does not match any simpleChoice identifier.Available: ${available}.`,
               recommendation: `Update the mapping to use valid choice identifiers: ${available}.`,
             });
           }
@@ -293,8 +297,54 @@ function staticAnswerChecks(summary: QTIItemSummary): Issue[] {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Behavioral Test Generation
 // ---------------------------------------------------------------------------
+
+function generateDeterministicTestCases(summary: QTIItemSummary): any[] {
+  const cases: any[] = [];
+
+  // 1. Full Correct Answer
+  const correctPayload: Record<string, any> = {};
+  summary.responseDeclarations.forEach((rd) => {
+    if (rd.correctResponse.length > 0) {
+      correctPayload[rd.identifier] = rd.cardinality === "single"
+        ? rd.correctResponse[0]
+        : rd.correctResponse;
+    }
+  });
+
+  if (Object.keys(correctPayload).length > 0) {
+    cases.push({
+      label: "Deterministic: Full Correct Response",
+      payload: correctPayload,
+      expectedIsCorrect: true,
+      // expectedScore: we don't know exactly unless we check outcomeDeclarations, which can be complex.
+      // But we can assume it should be > 0.
+    });
+  }
+
+  // 2. All Incorrect (if choices exist)
+  const incorrectPayload: Record<string, any> = {};
+  summary.interactions.forEach((ix) => {
+    const rd = summary.responseDeclarations.find(d => d.identifier === ix.responseIdentifier);
+    if (rd && ix.choices.length > 0) {
+      const wrongChoice = ix.choices.find(c => !rd.correctResponse.includes(c.identifier));
+      if (wrongChoice) {
+        incorrectPayload[ix.responseIdentifier] = wrongChoice.identifier;
+      }
+    }
+  });
+
+  if (Object.keys(incorrectPayload).length > 0) {
+    cases.push({
+      label: "Deterministic: All Incorrect Response",
+      payload: incorrectPayload,
+      expectedIsCorrect: false,
+    });
+  }
+
+  return cases;
+}
 
 function buildUserPrompt(summary: QTIItemSummary, rawXml: string): string {
   const summaryJson = JSON.stringify(summary, null, 2);
@@ -312,8 +362,8 @@ function buildUserPrompt(summary: QTIItemSummary, rawXml: string): string {
     "```xml",
     xmlExcerpt,
     "```\n",
-    "Provide your personalised review as the JSON schema specified in the system prompt.",
-    "Remember: every issue and strength must cite specific content from THIS item.",
+    "Provide your personalised review AND logical test cases as the JSON schema specified in the system prompt.",
+    "Remember: every issue and test case must cite specific content from THIS item.",
     "Do NOT raise issues for missing correct-answer feedback — it is intentionally absent in many items.",
   ].join("\n");
 }

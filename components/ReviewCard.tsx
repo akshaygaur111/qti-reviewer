@@ -118,6 +118,84 @@ export default function ReviewCard({ result, defaultExpanded = true }: Props) {
             )}
           </div>
 
+          {result.behavioralTests && result.behavioralTests.length > 0 && (
+            <div className="border-t border-gray-100 bg-white">
+              <div className="px-4 py-2 bg-purple-50 flex items-center justify-between border-b border-purple-100">
+                <span className="text-xs font-bold text-purple-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Behavioral Verification
+                </span>
+                <span className="text-[10px] text-purple-500 font-medium">Alpha API scored</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-gray-50 text-gray-500 uppercase font-semibold">
+                    <tr>
+                      <th className="px-4 py-2 border-b">Test Case</th>
+                      <th className="px-4 py-2 border-b">Expected</th>
+                      <th className="px-4 py-2 border-b">Actual</th>
+                      <th className="px-4 py-2 border-b text-right">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {result.behavioralTests.map((test, tidx) => (
+                      <tr key={tidx} className="hover:bg-gray-50/50">
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium text-gray-900">{test.label}</div>
+                          <div className="text-[10px] text-gray-400 font-mono mt-0.5 max-w-[200px] truncate">
+                            {JSON.stringify(test.payload)}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-600">
+                          {test.expectedIsCorrect !== undefined && (
+                            <div className="flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                              Correct: {test.expectedIsCorrect ? "Yes" : "No"}
+                            </div>
+                          )}
+                          {test.expectedScore !== undefined && (
+                            <div className="flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                              Score: {test.expectedScore}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-gray-600">
+                          {test.actualIsCorrect !== undefined && (
+                            <div className="flex items-center gap-1">
+                              <span className={`w-1.5 h-1.5 rounded-full ${test.actualIsCorrect ? "bg-green-400" : "bg-red-400"}`} />
+                              Correct: {test.actualIsCorrect ? "Yes" : "No"}
+                            </div>
+                          )}
+                          {test.actualScore !== undefined && (
+                            <div className="flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                              Score: {test.actualScore}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-colors ${test.status === "pass" ? "bg-green-100 text-green-700" :
+                              test.status === "fail" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"
+                            }`}>
+                            {test.status}
+                          </span>
+                          {test.error && (
+                            <div className="text-[9px] text-red-500 mt-1 max-w-[120px] ml-auto leading-tight italic">
+                              {test.error}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="px-4 py-2 border-t border-gray-100 text-xs text-gray-400 text-right">
             Model: {result.modelUsed}
           </div>

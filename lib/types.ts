@@ -71,6 +71,21 @@ export interface Issue {
   recommendation: string;
 }
 
+export interface TestCase {
+  label: string;
+  payload: Record<string, unknown>;
+  expectedScore?: number;
+  expectedIsCorrect?: boolean;
+}
+
+export interface TestResult extends TestCase {
+  actualScore?: number;
+  actualIsCorrect?: boolean;
+  status: "pass" | "fail" | "error";
+  error?: string;
+  responseBody?: any;
+}
+
 export interface ReviewResult {
   itemIdentifier: string;
   itemTitle: string;
@@ -82,6 +97,8 @@ export interface ReviewResult {
   error?: string;
   /** Set when the item was fetched from the alpha-1edtech API by ID */
   sourceItemId?: string;
+  /** Results of behavioral / automated testing against Alpha API */
+  behavioralTests?: TestResult[];
 }
 
 // ---------------------------------------------------------------------------

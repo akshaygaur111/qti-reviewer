@@ -29,6 +29,7 @@ function SingleTab() {
   const [fileName, setFileName] = useState("item.xml");
   const [itemId, setItemId] = useState("");
   const [loading, setLoading] = useState(false);
+  const [reviewStep, setReviewStep] = useState<"idle" | "fetching" | "analyzing" | "testing" | "done">("idle");
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,10 +49,18 @@ function SingleTab() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setReviewStep("fetching");
+
     try {
       const body = itemId.trim()
         ? { itemId: itemId.trim(), fileName: `item-${itemId.trim()}.xml` }
         : { xml, fileName };
+
+      // We'll simulate the steps visually since the API call is monolithic for now.
+      // In a real high-latency scenario, we might use Server Sent Events or WebSockets.
+      // For now, we update step based on internal progress of the one-shot API.
+
+      setReviewStep("analyzing");
       const res = await fetch("/api/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -59,9 +68,18 @@ function SingleTab() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Review failed");
+
+      if (data.behavioralTests?.length > 0) {
+        setReviewStep("testing");
+        // Brief artificial delay for visual feedback if it was too fast
+        await new Promise(r => setTimeout(r, 800));
+      }
+
       setResult(data as ReviewResult);
+      setReviewStep("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+      setReviewStep("idle");
     } finally {
       setLoading(false);
     }
@@ -76,6 +94,27 @@ function SingleTab() {
     a.download = `review-${result.itemIdentifier || "item"}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function handleExportExcel() {
+    if (!result) return;
+    try {
+      const res = await fetch("/api/review/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ results: [result] }),
+      });
+      if (!res.ok) throw new Error("Excel export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `review-${result.itemIdentifier || "item"}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Export failed: " + (err instanceof Error ? err.message : String(err)));
+    }
   }
 
   return (
@@ -139,17 +178,85 @@ function SingleTab() {
         )}
 
         {result && (
-          <button
-            onClick={handleDownload}
-            className="ml-auto px-4 py-2.5 border border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm flex items-center gap-1.5"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download JSON
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={handleDownload}
+              className="px-4 py-2.5 border border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              JSON
+            </button>
+            <button
+              onClick={handleExportExcel}
+              className="px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm flex items-center gap-1.5 shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Excel Report
+            </button>
+          </div>
         )}
       </div>
+
+      {loading && (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-6">
+          <div className="flex flex-col items-center text-center space-y-4">
+            <div className="relative">
+              <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+              {reviewStep === "testing" && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-blue-600 animate-pulse">API</span>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="font-semibold text-blue-900">
+                {reviewStep === "fetching" && "Fetching Item Source..."}
+                {reviewStep === "analyzing" && "AI Analysis & QTI Check..."}
+                {reviewStep === "testing" && "Running Behavioral Tests..."}
+              </h3>
+              <p className="text-xs text-blue-600/70 max-w-xs mx-auto">
+                {reviewStep === "analyzing" && "Gemini is reviewing content accuracy and generating edge-case payloads."}
+                {reviewStep === "testing" && "Submitting payloads to Alpha API to verify scoring logic and feedback behavior."}
+              </p>
+            </div>
+
+            {/* Roadmap Track */}
+            <div className="w-full max-w-sm flex items-center gap-2 pt-2">
+              {[
+                { s: "fetching", l: "Fetch" },
+                { s: "analyzing", l: "AI Review" },
+                { s: "testing", l: "Test" }
+              ].map((step, i, arr) => {
+                const steps = ["fetching", "analyzing", "testing", "done"];
+                const currentIndex = steps.indexOf(reviewStep);
+                const stepIndex = steps.indexOf(step.s);
+                const isComplete = currentIndex > stepIndex;
+                const isActive = currentIndex === stepIndex;
+
+                return (
+                  <div key={step.s} className="flex-1 flex items-center gap-2">
+                    <div className="flex flex-col items-center gap-1.5 flex-1">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${isComplete ? "bg-green-500 text-white" : isActive ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-500"
+                        }`}>
+                        {isComplete ? "✓" : i + 1}
+                      </div>
+                      <span className={`text-[10px] font-medium ${isActive ? "text-blue-700" : "text-gray-400"}`}>{step.l}</span>
+                    </div>
+                    {i < arr.length - 1 && (
+                      <div className={`h-[2px] flex-1 translate-y-[-8px] ${isComplete ? "bg-green-500" : "bg-gray-200"}`} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg bg-red-50 border border-red-200 p-4 text-sm text-red-700">{error}</div>
@@ -313,6 +420,27 @@ function BulkTab() {
     URL.revokeObjectURL(url);
   }
 
+  async function handleExportExcel() {
+    if (results.length === 0) return;
+    try {
+      const res = await fetch("/api/review/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ results }),
+      });
+      if (!res.ok) throw new Error("Excel export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bulk-review-${Date.now()}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Export failed: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
+
   const done = progress && progress.current === progress.total && !running;
   const pct = progress ? Math.round((progress.current / progress.total) * 100) : 0;
 
@@ -345,10 +473,9 @@ function BulkTab() {
               const isFailed = !!resultForItem?.error;
               return (
                 <li key={f.name} className="flex items-center gap-2 text-sm text-gray-700 px-2 py-1 rounded hover:bg-gray-50">
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${
-                    isFailed ? "bg-red-400" : isDone ? "bg-green-400" :
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${isFailed ? "bg-red-400" : isDone ? "bg-green-400" :
                     running && progress?.currentFileName === f.name ? "bg-blue-400 animate-pulse" : "bg-gray-200"
-                  }`} />
+                    }`} />
                   <span className="truncate flex-1">{f.name}</span>
                   {f.xmlUrl && <span className="text-xs text-gray-400">URL</span>}
                   {f.itemId && <span className="text-xs text-purple-400">API</span>}
@@ -403,15 +530,26 @@ function BulkTab() {
         )}
 
         {results.length > 0 && !running && (
-          <button
-            onClick={handleDownload}
-            className="ml-auto px-4 py-2.5 border border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm flex items-center gap-1.5"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            Download JSON
-          </button>
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={handleDownload}
+              className="px-4 py-2.5 border border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors text-sm flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              JSON
+            </button>
+            <button
+              onClick={handleExportExcel}
+              className="px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm flex items-center gap-1.5 shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Excel Report
+            </button>
+          </div>
         )}
       </div>
 
@@ -457,12 +595,12 @@ export default function HomePage() {
     fetch("/api/auth/me")
       .then((r) => (r.ok ? r.json() : null))
       .then((u) => { if (u) setMe(u); })
-      .catch(() => {});
+      .catch(() => { });
 
     fetch("/api/admin/settings")
       .then((r) => (r.ok ? r.json() : null))
       .then((s) => { if (s?.active_model) setActiveModel(s.active_model); })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   async function handleLogout() {
@@ -531,11 +669,10 @@ export default function HomePage() {
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`flex-1 px-6 py-4 font-medium text-sm transition-colors ${
-                  tab === t.id
-                    ? "text-blue-600 border-b-2 border-blue-500 bg-blue-50"
-                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-                }`}
+                className={`flex-1 px-6 py-4 font-medium text-sm transition-colors ${tab === t.id
+                  ? "text-blue-600 border-b-2 border-blue-500 bg-blue-50"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                  }`}
               >
                 {t.label}
               </button>
