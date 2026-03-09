@@ -1,15 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import FileDropZone from "@/components/FileDropZone";
 import ReviewCard from "@/components/ReviewCard";
 import BulkSummaryBar from "@/components/BulkSummaryBar";
-import ModelPicker from "@/components/ModelPicker";
 import SheetsInput from "@/components/SheetsInput";
 import HistoryTab from "@/components/HistoryTab";
 import type { ReviewResult, BulkReviewResponse } from "@/lib/types";
-
-const DEFAULT_MODEL = "gemini-2.5-flash";
 
 type Tab = "single" | "bulk" | "history";
 
@@ -27,7 +25,6 @@ interface QueueItem {
 function SingleTab() {
   const [xml, setXml] = useState("");
   const [fileName, setFileName] = useState("item.xml");
-  const [model, setModel] = useState(DEFAULT_MODEL);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +47,7 @@ function SingleTab() {
       const res = await fetch("/api/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ xml, fileName, model }),
+        body: JSON.stringify({ xml, fileName }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Review failed");
@@ -92,7 +89,6 @@ function SingleTab() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <ModelPicker value={model} onChange={setModel} disabled={loading} />
         <button
           onClick={handleReview}
           disabled={!xml.trim() || loading}
@@ -168,7 +164,6 @@ function buildBulkSummary(results: ReviewResult[]) {
 
 function BulkTab() {
   const [items, setItems] = useState<QueueItem[]>([]);
-  const [model, setModel] = useState(DEFAULT_MODEL);
   const [running, setRunning] = useState(false);
   const [abortRef] = useState({ abort: false });
   const [progress, setProgress] = useState<BulkProgress | null>(null);
@@ -224,7 +219,7 @@ function BulkTab() {
 
       let result: ReviewResult;
       try {
-        const body: Record<string, string> = { fileName: item.name, model };
+        const body: Record<string, string> = { fileName: item.name };
         if (item.xml) body.xml = item.xml;
         if (item.xmlUrl) body.xmlUrl = item.xmlUrl;
         if (batchId) body.batchId = batchId;
@@ -352,7 +347,6 @@ function BulkTab() {
 
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-3">
-        <ModelPicker value={model} onChange={setModel} disabled={running} />
         {!running ? (
           <button
             onClick={handleStart}
@@ -420,7 +414,27 @@ function BulkTab() {
 // ---------------------------------------------------------------------------
 
 export default function HomePage() {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("single");
+  const [me, setMe] = useState<{ username: string; role: string } | null>(null);
+  const [activeModel, setActiveModel] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((u) => { if (u) setMe(u); })
+      .catch(() => {});
+
+    fetch("/api/admin/settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s) => { if (s?.active_model) setActiveModel(s.active_model); })
+      .catch(() => {});
+  }, []);
+
+  async function handleLogout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+  }
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "single", label: "Single Item" },
@@ -429,34 +443,75 @@ export default function HomePage() {
   ];
 
   return (
-    <div className="space-y-8">
-      <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold text-gray-900">QTI 3.0 Item Reviewer</h1>
-        <p className="text-gray-500 max-w-xl mx-auto">
-          AI-powered review of QTI 3.0 assessment items — scoring logic, compliance, content accuracy, and more.
-        </p>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="flex border-b border-gray-200">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex-1 px-6 py-4 font-medium text-sm transition-colors ${
-                tab === t.id
-                  ? "text-blue-600 border-b-2 border-blue-500 bg-blue-50"
-                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+    <div className="min-h-screen bg-gray-50">
+      {/* Top bar */}
+      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
+            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <span className="font-semibold text-gray-900 text-sm">QTI Reviewer</span>
+          {activeModel && (
+            <span className="hidden sm:inline text-xs text-gray-400 border border-gray-200 rounded px-2 py-0.5">
+              {activeModel}
+            </span>
+          )}
         </div>
-        <div className="p-6">
-          {tab === "single" && <SingleTab />}
-          {tab === "bulk" && <BulkTab />}
-          {tab === "history" && <HistoryTab />}
+        <div className="flex items-center gap-3">
+          {me?.role === "admin" && (
+            <button
+              onClick={() => router.push("/admin")}
+              className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600"
+            >
+              Admin
+            </button>
+          )}
+          {me && (
+            <span className="text-xs text-gray-500 hidden sm:inline">
+              {me.username}
+            </span>
+          )}
+          <button
+            onClick={handleLogout}
+            className="text-xs px-3 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+          >
+            Sign out
+          </button>
+        </div>
+      </header>
+
+      <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+        <div className="text-center space-y-1.5">
+          <h1 className="text-3xl font-bold text-gray-900">QTI 3.0 Item Reviewer</h1>
+          <p className="text-gray-500 max-w-xl mx-auto text-sm">
+            AI-powered review of QTI 3.0 assessment items — scoring logic, compliance, content accuracy, and more.
+          </p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="flex border-b border-gray-200">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex-1 px-6 py-4 font-medium text-sm transition-colors ${
+                  tab === t.id
+                    ? "text-blue-600 border-b-2 border-blue-500 bg-blue-50"
+                    : "text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="p-6">
+            {tab === "single" && <SingleTab />}
+            {tab === "bulk" && <BulkTab />}
+            {tab === "history" && <HistoryTab />}
+          </div>
         </div>
       </div>
     </div>

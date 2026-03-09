@@ -174,3 +174,162 @@ export async function getBatchResults(batchId: string): Promise<ReviewResult[]> 
 }
 
 export const dbAvailable = () => Boolean(process.env.MONGODB_URI);
+
+// ---------------------------------------------------------------------------
+// Users collection
+// ---------------------------------------------------------------------------
+
+export interface UserDoc {
+  _id: string;           // UUID
+  username: string;      // unique login name
+  password: string;      // bcrypt hash
+  role: "admin" | "user";
+  created_at: Date;
+  created_by: string | null;   // admin user id who created this account
+}
+
+export async function findUserByUsername(username: string): Promise<UserDoc | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    return await db.collection<UserDoc>("users").findOne({ username });
+  } catch {
+    return null;
+  }
+}
+
+export async function createUser(user: Omit<UserDoc, "created_at">): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  try {
+    await db.collection<UserDoc>("users").insertOne({
+      ...user,
+      created_at: new Date(),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function listUsers(): Promise<Omit<UserDoc, "password">[]> {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    const docs = await db
+      .collection<UserDoc>("users")
+      .find({}, { projection: { password: 0 } })
+      .sort({ created_at: 1 })
+      .toArray();
+    return docs as Omit<UserDoc, "password">[];
+  } catch {
+    return [];
+  }
+}
+
+export async function deleteUser(id: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  try {
+    const res = await db.collection<UserDoc>("users").deleteOne({ _id: id });
+    return res.deletedCount > 0;
+  } catch {
+    return false;
+  }
+}
+
+export async function userCount(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  try {
+    return await db.collection<UserDoc>("users").countDocuments();
+  } catch {
+    return 0;
+  }
+}
+
+export async function updateUserPassword(id: string, hash: string): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  try {
+    const res = await db
+      .collection<UserDoc>("users")
+      .updateOne({ _id: id }, { $set: { password: hash } });
+    return res.modifiedCount > 0;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Settings collection (single global document)
+// ---------------------------------------------------------------------------
+
+export interface SettingsDoc {
+  _id: "global";
+  active_model: string;
+  updated_at: Date;
+  updated_by: string;   // admin user id
+}
+
+const DEFAULT_MODEL = process.env.DEFAULT_MODEL ?? "gemini-2.5-flash";
+
+export async function getSettings(): Promise<SettingsDoc> {
+  const db = await getDb();
+  if (!db) {
+    return { _id: "global", active_model: DEFAULT_MODEL, updated_at: new Date(), updated_by: "" };
+  }
+  try {
+    const doc = await db.collection<SettingsDoc>("settings").findOne({ _id: "global" });
+    return doc ?? { _id: "global", active_model: DEFAULT_MODEL, updated_at: new Date(), updated_by: "" };
+  } catch {
+    return { _id: "global", active_model: DEFAULT_MODEL, updated_at: new Date(), updated_by: "" };
+  }
+}
+
+export async function updateSettings(
+  model: string,
+  adminId: string
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  try {
+    await db.collection<SettingsDoc>("settings").updateOne(
+      { _id: "global" },
+      { $set: { active_model: model, updated_at: new Date(), updated_by: adminId } },
+      { upsert: true }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap — seed default admin on first run
+// ---------------------------------------------------------------------------
+
+/** Called at startup by auth routes. Creates the admin account from env vars
+ *  if no users exist yet. Safe to call multiple times. */
+export async function ensureDefaultAdmin(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  const count = await userCount();
+  if (count > 0) return;   // already initialised
+
+  const username = process.env.ADMIN_USERNAME ?? "admin";
+  const password = process.env.ADMIN_PASSWORD ?? "changeme";
+
+  // Lazy import to avoid circular deps and keep server-only bcrypt out of edge runtime
+  const { hashPassword } = await import("./auth");
+  const hash = await hashPassword(password);
+
+  await createUser({
+    _id: crypto.randomUUID(),
+    username,
+    password: hash,
+    role: "admin",
+    created_by: null,
+  });
+}

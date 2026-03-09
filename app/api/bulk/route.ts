@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseQTIXml } from "@/lib/parser";
 import { QTIReviewer } from "@/lib/reviewer";
+import { getSettings } from "@/lib/db";
 import type { BulkReviewRequest, BulkReviewResponse, ReviewResult } from "@/lib/types";
 
 export const maxDuration = 60; // seconds per Vercel function call
@@ -30,7 +31,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const reviewer = new QTIReviewer(apiKey);
+  // Model is set globally by admin
+  const settings = await getSettings();
+  const reviewer = new QTIReviewer(apiKey, settings.active_model);
   const results: ReviewResult[] = [];
 
   for (const item of body.items) {

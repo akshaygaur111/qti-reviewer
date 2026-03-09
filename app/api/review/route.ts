@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { parseQTIXml } from "@/lib/parser";
 import { QTIReviewer } from "@/lib/reviewer";
-import { saveResult } from "@/lib/db";
+import { saveResult, getSettings } from "@/lib/db";
 import type { ReviewRequest } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -45,7 +45,10 @@ export async function POST(req: NextRequest) {
   }
 
   const fileName = body.fileName ?? (body.xmlUrl ? body.xmlUrl.split("/").pop() ?? "item.xml" : "item.xml");
-  const model = body.model && typeof body.model === "string" ? body.model : undefined;
+
+  // Model is set globally by admin — ignore any client-supplied model
+  const settings = await getSettings();
+  const model = settings.active_model;
 
   try {
     const summary = parseQTIXml(xml, fileName);
