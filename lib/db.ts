@@ -143,6 +143,100 @@ export interface ResultDoc extends ReviewResult {
   created_at: Date;
 }
 
+export interface JobDoc {
+  _id: string;
+  batch_id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  progress: {
+    current: number;
+    total: number;
+    currentFileName: string;
+  };
+  error?: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export async function createJob(jobId: string, batchId: string, total: number): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  try {
+    await db.collection<JobDoc>("jobs").insertOne({
+      _id: jobId,
+      batch_id: batchId,
+      status: "pending",
+      progress: {
+        current: 0,
+        total,
+        currentFileName: "",
+      },
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function updateJobProgress(
+  jobId: string,
+  progress: JobDoc["progress"],
+  status: JobDoc["status"] = "running",
+  error?: string
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.collection<JobDoc>("jobs").updateOne(
+      { _id: jobId },
+      {
+        $set: {
+          progress,
+          status,
+          error,
+          updated_at: new Date(),
+        },
+      }
+    );
+  } catch { /* best-effort */ }
+}
+
+export async function getJob(jobId: string): Promise<JobDoc | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    return await db.collection<JobDoc>("jobs").findOne({ _id: jobId });
+  } catch {
+    return null;
+  }
+}
+
+export async function listActiveJobs(): Promise<JobDoc[]> {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    return await db
+      .collection<JobDoc>("jobs")
+      .find({ status: { $in: ["pending", "running"] } })
+      .sort({ created_at: -1 })
+      .toArray();
+  } catch {
+    return [];
+  }
+}
+
+export async function updateJobStatus(jobId: string, status: JobDoc["status"]): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.collection<JobDoc>("jobs").updateOne(
+      { _id: jobId },
+      { $set: { status, updated_at: new Date() } }
+    );
+  } catch { /* best-effort */ }
+}
+
 export async function saveResult(
   batchId: string,
   result: ReviewResult

@@ -143,3 +143,22 @@ export interface BulkReviewResponse {
     criticalIssueCount: number;
   };
 }
+// ---------------------------------------------------------------------------
+// Job types
+// ---------------------------------------------------------------------------
+
+export interface JobProgress {
+  current: number;
+  total: number;
+  currentFileName: string;
+}
+
+export interface Job {
+  id: string;
+  batchId: string;
+  status: "pending" | "running" | "completed" | "failed";
+  progress: JobProgress;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}

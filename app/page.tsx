@@ -326,89 +326,109 @@ function BulkTab() {
     });
   }
 
+  useEffect(() => {
+    // 1. Check if there's an active job on mount
+    async function checkActiveJobs() {
+      try {
+        const res = await fetch("/api/review/jobs");
+        const { activeJobs } = await res.json();
+        if (activeJobs && activeJobs.length > 0) {
+          const latest = activeJobs[0]; // simplest: just resume the latest one
+          const confirmResume = confirm(`An active bulk job is already running on the server: ${latest.progress.current}/${latest.progress.total} items. Would you like to resume viewing its progress?`);
+          if (confirmResume) {
+            setRunning(true);
+            setSavedBatchId(latest.batch_id);
+            pollJob(latest._id, latest.batch_id);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to check active jobs:", err);
+      }
+    }
+    checkActiveJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const pollJob = async (jobId: string, batchId: string) => {
+    try {
+      const res = await fetch(`/api/review/jobs?id=${jobId}`);
+      if (!res.ok) throw new Error("Job polling failed");
+      const job = await res.json();
+
+      setProgress(job.progress);
+
+      if (job.status === "completed") {
+        setRunning(false);
+        // Fetch the final results from the batch endpoint
+        const resultsRes = await fetch(`/api/history/batches/${batchId}`);
+        const data = await resultsRes.json();
+        setResults(data.results ?? []);
+      } else if (job.status === "failed") {
+        setRunning(false);
+        alert("Job failed or was cancelled.");
+      } else {
+        setTimeout(() => pollJob(jobId, batchId), 2000);
+      }
+    } catch (err) {
+      console.error("Polling error:", err);
+      setTimeout(() => pollJob(jobId, batchId), 5000);
+    }
+  };
+
   function removeItem(name: string) {
     setItems((prev) => prev.filter((f) => f.name !== name));
   }
 
   async function handleStart() {
     if (items.length === 0) return;
-    abortRef.abort = false;
     setRunning(true);
     setResults([]);
     setSavedBatchId(null);
-    setProgress({ current: 0, total: items.length, currentFileName: items[0].name });
+    setProgress({ current: 0, total: items.length, currentFileName: "Initializing..." });
 
-    // Create a batch in DB (no-op if DB not configured)
-    let batchId: string | null = null;
     try {
+      // 1. Create Batch
       const batchRes = await fetch("/api/history/batches", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: `Batch ${new Date().toLocaleString()} (${items.length} items)` }),
       });
-      const batchData = await batchRes.json();
-      batchId = batchData.batchId ?? null;
-      if (batchId) setSavedBatchId(batchId);
-    } catch { /* DB unavailable, continue without persistence */ }
+      const { batchId } = await batchRes.json();
+      if (!batchId) throw new Error("Failed to create batch");
+      setSavedBatchId(batchId);
 
-    const collectedResults: ReviewResult[] = [];
+      // 2. Start Server-Side Job
+      const jobRes = await fetch("/api/review/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batchId, items: items.map(i => ({ xml: i.xml, xmlUrl: i.xmlUrl, itemId: i.itemId, fileName: i.name })) }),
+      });
+      const { jobId } = await jobRes.json();
+      if (!jobId) throw new Error("Failed to start job");
 
-    for (let i = 0; i < items.length; i++) {
-      if (abortRef.abort) break;
-      const item = items[i];
-      setProgress({ current: i, total: items.length, currentFileName: item.name });
+      // 3. Poll for progress using the shared function
+      pollJob(jobId, batchId);
 
-      let result: ReviewResult;
-      try {
-        const body: Record<string, string> = { fileName: item.name };
-        if (item.xml) body.xml = item.xml;
-        if (item.xmlUrl) body.xmlUrl = item.xmlUrl;
-        if (item.itemId) body.itemId = item.itemId;
-        if (batchId) body.batchId = batchId;
-
-        const res = await fetch("/api/review", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "Review failed");
-        result = data as ReviewResult;
-      } catch (err) {
-        result = {
-          itemIdentifier: "",
-          itemTitle: item.name,
-          fileName: item.name,
-          overallScore: 0,
-          overallSummary: "",
-          issues: [],
-          modelUsed: "",
-          error: err instanceof Error ? err.message : String(err),
-        };
-      }
-
-      collectedResults.push(result);
-      setResults([...collectedResults]);
+    } catch (err) {
+      setRunning(false);
+      alert("Failed to start bulk review: " + (err instanceof Error ? err.message : String(err)));
     }
-
-    // Update batch summary
-    if (batchId && collectedResults.length > 0) {
-      try {
-        await fetch("/api/history/batches", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ batchId, summary: buildBulkSummary(collectedResults) }),
-        });
-      } catch { /* best-effort */ }
-    }
-
-    setProgress((p) => p ? { ...p, current: p.total } : null);
-    setRunning(false);
   }
 
-  function handleStop() {
-    abortRef.abort = true;
+  async function handleStop() {
+    if (!running) return;
     setRunning(false);
+    // Best effort cancellation
+    try {
+      const activeJobRes = await fetch("/api/review/jobs");
+      const { activeJobs } = await activeJobRes.json();
+      const myJob = activeJobs.find((j: any) => j.batch_id === savedBatchId);
+      if (myJob) {
+        await fetch(`/api/review/jobs?id=${myJob._id}`, { method: "DELETE" });
+      }
+    } catch (err) {
+      console.error("Failed to cancel job:", err);
+    }
   }
 
   function handleDownload() {
