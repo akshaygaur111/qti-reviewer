@@ -7,8 +7,8 @@ export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError]       = useState<string | null>(null);
-  const [loading, setLoading]   = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -97,7 +97,7 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading || !username.trim() || !password}
+              disabled={loading || !username || !password}
               className="w-full py-2.5 bg-blue-600 text-white rounded-lg font-medium text-sm
                          hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
                          transition-colors flex items-center justify-center gap-2"
