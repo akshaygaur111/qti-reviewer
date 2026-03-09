@@ -24,6 +24,27 @@ Analyse QTI 3.0 assessment items and report issues across six categories:
 5. qti_compliance — QTI 3.0 required attributes (identifier, title, adaptive, timeDependent), responseIdentifier cross-references, structural validity.
 6. accessibility — Alt text for images that are actually present, xml:lang, reading level, inclusive language.
 
+## Always check these explicitly
+
+### Content check
+- Verify the question text (item body) is factually correct, clearly worded, and unambiguous.
+- Verify the question makes sense in isolation and does not rely on external context that is not provided.
+
+### Correct answer check
+- Verify that the value(s) listed in each correctResponse element are genuinely the right answer(s) to the question.
+- For choice interactions: confirm the identified correct choice text is actually correct based on the question content.
+- If the marked correct answer is factually wrong or does not match the question, raise a **critical** answer_completeness issue.
+
+### QTI correctResponse vs choices cross-check
+- For every correctResponse identifier, verify it resolves to a simpleChoice (or inlineChoice) that exists in the interaction.
+- A correctResponse referencing a non-existent choice identifier is always a **critical** answer_completeness issue.
+- Verify no choice identifiers are duplicated within the same interaction.
+
+### All possible answers check
+- For choice interactions, verify that all plausible and expected answer options are present as choices.
+- Flag as a **major** answer_completeness issue if obvious distractors are missing or if the set of choices is implausibly sparse or trivially easy.
+- For multiple-response interactions (cardinality=multiple), verify ALL correct answers are listed in the correctResponse—not just some of them.
+
 ## Always raise these as critical issues
 - Missing SCORE outcomeDeclaration: if no outcomeDeclaration with identifier="SCORE" exists, raise a critical scoring_logic issue — the item has no declared score outcome and scoring will not function.
 
@@ -116,6 +137,9 @@ export class QTIReviewer {
       return result;
     }
 
+    // Run deterministic checks before calling the AI
+    result.issues.push(...staticAnswerChecks(summary));
+
     const userPrompt = buildUserPrompt(summary, rawXml);
 
     try {
@@ -159,6 +183,113 @@ export class QTIReviewer {
 
     return result;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Static (non-AI) answer / content checks
+// ---------------------------------------------------------------------------
+
+const CHOICE_INTERACTIONS = new Set([
+  "choiceInteraction",
+  "inlineChoiceInteraction",
+]);
+
+function staticAnswerChecks(summary: QTIItemSummary): Issue[] {
+  const issues: Issue[] = [];
+
+  const rdMap = new Map(summary.responseDeclarations.map((rd) => [rd.identifier, rd]));
+  const interactionIds = new Set(summary.interactions.map((ix) => ix.responseIdentifier));
+
+  for (const interaction of summary.interactions) {
+    const rid = interaction.responseIdentifier;
+    const rd = rdMap.get(rid);
+
+    if (CHOICE_INTERACTIONS.has(interaction.interactionType)) {
+      const choiceIds = new Set(interaction.choices.map((c) => c.identifier));
+
+      // Check: choices list must not be empty
+      if (interaction.choices.length === 0) {
+        issues.push({
+          category: "answer_completeness",
+          severity: "critical",
+          message: `No choices in interaction '${rid}'`,
+          detail: `The ${interaction.interactionType} with responseIdentifier '${rid}' has no simpleChoice/inlineChoice elements. Learners will have nothing to select.`,
+          recommendation: "Add simpleChoice (or inlineChoice) elements to the interaction.",
+        });
+      }
+
+      // Check: duplicate choice identifiers
+      const seen = new Set<string>();
+      for (const choice of interaction.choices) {
+        if (seen.has(choice.identifier)) {
+          issues.push({
+            category: "qti_compliance",
+            severity: "major",
+            message: `Duplicate choice identifier '${choice.identifier}' in '${rid}'`,
+            detail: `Multiple simpleChoice elements share the identifier '${choice.identifier}' in interaction '${rid}'. All choice identifiers must be unique.`,
+            recommendation: "Assign a unique identifier to each simpleChoice element.",
+          });
+        }
+        seen.add(choice.identifier);
+      }
+
+      if (rd) {
+        // Check: correctResponse must be defined
+        if (rd.correctResponse.length === 0) {
+          issues.push({
+            category: "answer_completeness",
+            severity: "critical",
+            message: `No correctResponse for '${rid}'`,
+            detail: `The responseDeclaration '${rid}' has no correctResponse values. The item cannot be automatically scored.`,
+            recommendation: "Add a <correctResponse> element with the correct choice identifier(s).",
+          });
+        } else {
+          // Check: every correctResponse value resolves to a real choice
+          for (const respId of rd.correctResponse) {
+            if (choiceIds.size > 0 && !choiceIds.has(respId)) {
+              const available = [...choiceIds].sort().join(", ");
+              issues.push({
+                category: "answer_completeness",
+                severity: "critical",
+                message: `Correct answer '${respId}' not found in choices of '${rid}'`,
+                detail: `The correctResponse references '${respId}' in responseDeclaration '${rd.identifier}', but no simpleChoice with that identifier exists. Available choice identifiers: ${available}.`,
+                recommendation: `Update the correctResponse to use one of the valid choice identifiers: ${available}.`,
+              });
+            }
+          }
+        }
+
+        // Check: mapping keys must resolve to real choices
+        for (const mapKey of Object.keys(rd.mapping)) {
+          if (choiceIds.size > 0 && !choiceIds.has(mapKey)) {
+            const available = [...choiceIds].sort().join(", ");
+            issues.push({
+              category: "scoring_logic",
+              severity: "major",
+              message: `Mapping key '${mapKey}' not found in choices of '${rid}'`,
+              detail: `The mapping in responseDeclaration '${rd.identifier}' references '${mapKey}', which does not match any simpleChoice identifier. Available: ${available}.`,
+              recommendation: `Update the mapping to use valid choice identifiers: ${available}.`,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Check: responseDeclarations without a matching interaction
+  for (const rd of summary.responseDeclarations) {
+    if (!interactionIds.has(rd.identifier)) {
+      issues.push({
+        category: "qti_compliance",
+        severity: "minor",
+        message: `Unused responseDeclaration '${rd.identifier}'`,
+        detail: `The responseDeclaration '${rd.identifier}' is not referenced by any interaction in the itemBody.`,
+        recommendation: "Remove the unused responseDeclaration or add the matching interaction.",
+      });
+    }
+  }
+
+  return issues;
 }
 
 // ---------------------------------------------------------------------------

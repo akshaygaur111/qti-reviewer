@@ -112,6 +112,42 @@ You will evaluate each item across six categories:
 
 6. **accessibility** — Are images accompanied by alt text? Is the language attribute set? Is the reading level appropriate? Is the item free from accessibility barriers?
 
+## Always check these explicitly
+
+### Content check
+- Verify the question text (item body) is factually correct, clearly worded, and unambiguous.
+- Verify the question makes sense in isolation and does not rely on external context that is not provided.
+
+### Correct answer check
+- Verify that the value(s) listed in each `correctResponse` element are genuinely the right answer(s) to the question.
+- For choice interactions: confirm the identified correct choice text is actually correct based on the question content.
+- If the marked correct answer is factually wrong or does not match the question, raise a **critical** `answer_completeness` issue.
+
+### QTI correctResponse vs choices cross-check
+- For every `correctResponse` identifier, verify it resolves to a `simpleChoice` (or `inlineChoice`) that exists in the interaction.
+- A `correctResponse` referencing a non-existent choice identifier is always a **critical** `answer_completeness` issue.
+- Verify no choice identifiers are duplicated within the same interaction.
+
+### All possible answers check
+- For choice interactions, verify that all plausible and expected answer options are present as choices.
+- Flag as a **major** `answer_completeness` issue if obvious distractors are missing or if the set of choices is implausibly sparse or trivially easy.
+- For multiple-response interactions (cardinality=multiple), verify ALL correct answers are listed in the correctResponse—not just some of them.
+
+## Always raise these as critical issues
+- Missing SCORE outcomeDeclaration: if no outcomeDeclaration with identifier="SCORE" exists, raise a critical scoring_logic issue.
+
+## Personalisation rules — CRITICAL
+Every issue MUST reference specific details from THIS item:
+- Quote the actual question text or choice content when relevant
+- Name actual identifiers (e.g. "RESPONSE_1", "SCORE maxValue 10")
+- Reference actual score values and element names found in the XML
+- Do NOT write generic statements unless they apply to something actually present in the XML
+
+## Do NOT raise issues for these — they are valid design choices
+- Absence of modalFeedback for correct answers (correct-answer feedback is optional)
+- Absence of modalFeedback entirely (feedback is always optional)
+- Simple response processing templates when the interaction type suits them
+
 Respond ONLY with a valid JSON object using the following schema (no markdown, no extra text):
 
 {
@@ -142,6 +178,133 @@ Severity definitions:
 - minor: Small problem that should be addressed but does not break functionality.
 - suggestion: Enhancement that would improve but is not required.
 """
+
+
+_CHOICE_INTERACTIONS = frozenset({
+    "choiceInteraction",
+    "inlineChoiceInteraction",
+})
+
+_CHOICE_MAPPING_INTERACTIONS = frozenset({
+    "choiceInteraction",
+    "inlineChoiceInteraction",
+    "orderInteraction",
+    "matchInteraction",
+    "associateInteraction",
+    "gapMatchInteraction",
+})
+
+
+def _static_answer_checks(item: QTIItem) -> list[Issue]:
+    """Perform deterministic (non-AI) checks on answers, choices, and correctResponse validity."""
+    issues: list[Issue] = []
+
+    rd_map = {rd.identifier: rd for rd in item.response_declarations}
+    interaction_ids = {ix.response_identifier for ix in item.interactions}
+
+    for interaction in item.interactions:
+        rid = interaction.response_identifier
+        rd = rd_map.get(rid)
+
+        if interaction.interaction_type in _CHOICE_INTERACTIONS:
+            choice_ids = {c.identifier for c in interaction.choices}
+
+            # Check: choices list must not be empty
+            if not interaction.choices:
+                issues.append(Issue(
+                    category="answer_completeness",
+                    severity="critical",
+                    message=f"No choices in interaction '{rid}'",
+                    detail=(
+                        f"The {interaction.interaction_type} with responseIdentifier '{rid}' "
+                        "has no simpleChoice/inlineChoice elements. Learners will have nothing to select."
+                    ),
+                    recommendation="Add simpleChoice (or inlineChoice) elements to the interaction.",
+                ))
+
+            # Check: duplicate choice identifiers
+            seen: set[str] = set()
+            for choice in interaction.choices:
+                if choice.identifier in seen:
+                    issues.append(Issue(
+                        category="qti_compliance",
+                        severity="major",
+                        message=f"Duplicate choice identifier '{choice.identifier}' in '{rid}'",
+                        detail=(
+                            f"Multiple simpleChoice elements share the identifier '{choice.identifier}' "
+                            f"in interaction '{rid}'. All choice identifiers must be unique."
+                        ),
+                        recommendation="Assign a unique identifier to each simpleChoice element.",
+                    ))
+                seen.add(choice.identifier)
+
+            if rd is not None:
+                # Check: correctResponse must be defined
+                if not rd.correct_response:
+                    issues.append(Issue(
+                        category="answer_completeness",
+                        severity="critical",
+                        message=f"No correctResponse for '{rid}'",
+                        detail=(
+                            f"The responseDeclaration '{rid}' has no correctResponse values. "
+                            "The item cannot be automatically scored."
+                        ),
+                        recommendation="Add a <correctResponse> element with the correct choice identifier(s).",
+                    ))
+                else:
+                    # Check: every correctResponse value resolves to a real choice
+                    for resp_id in rd.correct_response:
+                        if choice_ids and resp_id not in choice_ids:
+                            issues.append(Issue(
+                                category="answer_completeness",
+                                severity="critical",
+                                message=f"Correct answer '{resp_id}' not found in choices of '{rid}'",
+                                detail=(
+                                    f"The correctResponse references '{resp_id}' in responseDeclaration "
+                                    f"'{rd.identifier}', but no simpleChoice with that identifier exists. "
+                                    f"Available choice identifiers: {sorted(choice_ids)}."
+                                ),
+                                recommendation=(
+                                    f"Update the correctResponse to use one of the valid choice identifiers: "
+                                    f"{sorted(choice_ids)}."
+                                ),
+                            ))
+
+                # Check: mapping keys must resolve to real choices
+                if rd.mapping:
+                    for map_key in rd.mapping:
+                        if choice_ids and map_key not in choice_ids:
+                            issues.append(Issue(
+                                category="scoring_logic",
+                                severity="major",
+                                message=f"Mapping key '{map_key}' not found in choices of '{rid}'",
+                                detail=(
+                                    f"The mapping in responseDeclaration '{rd.identifier}' references "
+                                    f"'{map_key}', which does not match any simpleChoice identifier. "
+                                    f"Available: {sorted(choice_ids)}."
+                                ),
+                                recommendation=(
+                                    f"Update the mapping to use valid choice identifiers: {sorted(choice_ids)}."
+                                ),
+                            ))
+
+    # Check: responseDeclarations without a matching interaction
+    for rd in item.response_declarations:
+        if rd.identifier not in interaction_ids:
+            issues.append(Issue(
+                category="qti_compliance",
+                severity="minor",
+                message=f"Unused responseDeclaration '{rd.identifier}'",
+                detail=(
+                    f"The responseDeclaration '{rd.identifier}' is not referenced by any interaction "
+                    "in the itemBody."
+                ),
+                recommendation=(
+                    "Remove the unused responseDeclaration or add the matching interaction."
+                ),
+            ))
+
+    return issues
 
 
 def _build_user_prompt(summary: dict, raw_xml: str) -> str:
@@ -213,6 +376,10 @@ class QTIReviewer:
                 recommendation="Fix the XML syntax errors in the source file.",
             ))
             return result
+
+        # Run deterministic checks before calling the AI
+        static_issues = _static_answer_checks(item)
+        result.issues.extend(static_issues)
 
         summary = summarize_item(item)
         user_prompt = _build_user_prompt(summary, item.raw_xml)
