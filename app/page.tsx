@@ -6,16 +6,18 @@ import FileDropZone from "@/components/FileDropZone";
 import ReviewCard from "@/components/ReviewCard";
 import BulkSummaryBar from "@/components/BulkSummaryBar";
 import SheetsInput from "@/components/SheetsInput";
+import IdInput from "@/components/IdInput";
 import HistoryTab from "@/components/HistoryTab";
 import type { ReviewResult, BulkReviewResponse } from "@/lib/types";
 
 type Tab = "single" | "bulk" | "history";
 
-// Queue item — either file-based (xml content) or URL-based (from sheet)
+// Queue item — file-based (xml), URL-based (xmlUrl), or alpha API ID (itemId)
 interface QueueItem {
   name: string;
   xml?: string;
   xmlUrl?: string;
+  itemId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -25,6 +27,7 @@ interface QueueItem {
 function SingleTab() {
   const [xml, setXml] = useState("");
   const [fileName, setFileName] = useState("item.xml");
+  const [itemId, setItemId] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ReviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -33,21 +36,26 @@ function SingleTab() {
     if (files[0]) {
       setXml(files[0].content);
       setFileName(files[0].name);
+      setItemId("");
       setResult(null);
       setError(null);
     }
   }
 
   async function handleReview() {
-    if (!xml.trim()) return;
+    const hasContent = xml.trim() || itemId.trim();
+    if (!hasContent) return;
     setLoading(true);
     setError(null);
     setResult(null);
     try {
+      const body = itemId.trim()
+        ? { itemId: itemId.trim(), fileName: `item-${itemId.trim()}.xml` }
+        : { xml, fileName };
       const res = await fetch("/api/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ xml, fileName }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Review failed");
@@ -74,13 +82,29 @@ function SingleTab() {
     <div className="space-y-6">
       <FileDropZone onFiles={handleFiles} disabled={loading} />
 
+      <div className="flex gap-2 items-center">
+        <div className="flex-1">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Or enter item ID <span className="text-purple-500 font-normal text-xs">(alpha-1edtech API)</span>
+          </label>
+          <input
+            type="text"
+            value={itemId}
+            onChange={(e) => { setItemId(e.target.value); setXml(""); setResult(null); setError(null); }}
+            placeholder="e.g. item-001"
+            disabled={loading}
+            className="w-full text-sm border border-purple-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white disabled:opacity-50"
+          />
+        </div>
+      </div>
+
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Or paste QTI XML directly
         </label>
         <textarea
           value={xml}
-          onChange={(e) => { setXml(e.target.value); setResult(null); setError(null); }}
+          onChange={(e) => { setXml(e.target.value); setItemId(""); setResult(null); setError(null); }}
           placeholder='<?xml version="1.0" encoding="UTF-8"?>\n<assessmentItem xmlns="http://www.imsglobal.org/xsd/imsqtiasi_v3p0" ...>'
           rows={8}
           disabled={loading}
@@ -91,7 +115,7 @@ function SingleTab() {
       <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={handleReview}
-          disabled={!xml.trim() || loading}
+          disabled={(!xml.trim() && !itemId.trim()) || loading}
           className="px-5 py-2.5 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
         >
           {loading ? (
@@ -105,9 +129,9 @@ function SingleTab() {
           ) : "Review Item"}
         </button>
 
-        {xml.trim() && !loading && (
+        {(xml.trim() || itemId.trim()) && !loading && (
           <button
-            onClick={() => { setXml(""); setResult(null); setError(null); }}
+            onClick={() => { setXml(""); setItemId(""); setResult(null); setError(null); }}
             className="px-4 py-2.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors text-sm"
           >
             Clear
@@ -178,10 +202,17 @@ function BulkTab() {
     });
   }
 
-  function handleSheetItems(sheetItems: { name: string; xmlUrl: string }[]) {
+  function handleSheetItems(sheetItems: { name: string; xmlUrl?: string; itemId?: string }[]) {
     setItems((prev) => {
       const existing = new Set(prev.map((f) => f.name));
       return [...prev, ...sheetItems.filter((s) => !existing.has(s.name))];
+    });
+  }
+
+  function handleIdItems(idItems: { name: string; itemId: string }[]) {
+    setItems((prev) => {
+      const existing = new Set(prev.map((f) => f.name));
+      return [...prev, ...idItems.filter((s) => !existing.has(s.name))];
     });
   }
 
@@ -222,6 +253,7 @@ function BulkTab() {
         const body: Record<string, string> = { fileName: item.name };
         if (item.xml) body.xml = item.xml;
         if (item.xmlUrl) body.xmlUrl = item.xmlUrl;
+        if (item.itemId) body.itemId = item.itemId;
         if (batchId) body.batchId = batchId;
 
         const res = await fetch("/api/review", {
@@ -289,6 +321,7 @@ function BulkTab() {
       {/* Input sources */}
       <FileDropZone multiple onFiles={handleFiles} disabled={running} />
       <SheetsInput onAdd={handleSheetItems} disabled={running} />
+      <IdInput onAdd={handleIdItems} disabled={running} />
 
       {/* Queue */}
       {items.length > 0 && (
@@ -318,6 +351,7 @@ function BulkTab() {
                   }`} />
                   <span className="truncate flex-1">{f.name}</span>
                   {f.xmlUrl && <span className="text-xs text-gray-400">URL</span>}
+                  {f.itemId && <span className="text-xs text-purple-400">API</span>}
                   {!running && (
                     <button onClick={() => removeItem(f.name)} className="text-gray-300 hover:text-red-500 transition-colors">✕</button>
                   )}

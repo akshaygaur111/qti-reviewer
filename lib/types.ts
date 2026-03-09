@@ -89,6 +89,7 @@ export interface ReviewResult {
 export interface ReviewRequest {
   xml?: string;       // raw XML content
   xmlUrl?: string;    // URL to fetch XML from (server-side)
+  itemId?: string;    // alpha-1edtech assessment item ID
   fileName?: string;
   model?: string;
   batchId?: string;   // if set, result is saved to DB under this batch

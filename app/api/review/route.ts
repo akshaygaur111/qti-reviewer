@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseQTIXml } from "@/lib/parser";
 import { QTIReviewer } from "@/lib/reviewer";
 import { saveResult, getSettings } from "@/lib/db";
+import { fetchAlphaItemXml } from "@/lib/alpha-api";
 import type { ReviewRequest } from "@/lib/types";
 
 export const maxDuration = 60;
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  // Resolve XML content — from inline string or remote URL
+  // Resolve XML content — from inline string, remote URL, or alpha API item ID
   let xml = body.xml ?? "";
   if (!xml && body.xmlUrl) {
     try {
@@ -37,14 +38,27 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  if (!xml && body.itemId) {
+    try {
+      xml = await fetchAlphaItemXml(body.itemId);
+    } catch (err) {
+      return NextResponse.json(
+        { error: `Failed to fetch item from alpha API: ${err instanceof Error ? err.message : err}` },
+        { status: 400 }
+      );
+    }
+  }
+
   if (!xml.trim()) {
     return NextResponse.json(
-      { error: "Request body must contain a non-empty 'xml' string or a valid 'xmlUrl'." },
+      { error: "Request body must contain a non-empty 'xml', 'xmlUrl', or 'itemId'." },
       { status: 400 }
     );
   }
 
-  const fileName = body.fileName ?? (body.xmlUrl ? body.xmlUrl.split("/").pop() ?? "item.xml" : "item.xml");
+  const fileName =
+    body.fileName ??
+    (body.itemId ? `item-${body.itemId}.xml` : body.xmlUrl?.split("/").pop() ?? "item.xml");
 
   // Model is set globally by admin — ignore any client-supplied model
   const settings = await getSettings();
